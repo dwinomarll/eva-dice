@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EVA D20 Roller</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #07070f;
+      color: #fff;
+      font-family: -apple-system, 'SF Pro Display', BlinkMacSystemFont, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    #title {
+      font-size: 0.65rem;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      color: rgba(212, 175, 55, 0.45);
+      margin-bottom: 0.5rem;
+    }
+
+    #canvas-wrap {
+      width: 100%;
+      max-width: 560px;
+      height: 52vh;
+      position: relative;
+    }
+
+    canvas { display: block; width: 100% !important; height: 100% !important; }
+
+    #result-area {
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1.4rem;
+      margin: 0.25rem 0 0.75rem;
+    }
+
+    .roll-num {
+      font-size: 3.8rem;
+      font-weight: 800;
+      color: #d4af37;
+      text-shadow: 0 0 24px rgba(212, 175, 55, 0.6), 0 0 60px rgba(212, 175, 55, 0.25);
+      animation: popIn 0.35s cubic-bezier(0.22, 1.8, 0.5, 1) both;
+      line-height: 1;
+    }
+
+    .roll-sep {
+      font-size: 2rem;
+      color: rgba(255, 255, 255, 0.18);
+      font-weight: 300;
+    }
+
+    .roll-total {
+      font-size: 1rem;
+      letter-spacing: 0.15em;
+      color: rgba(212, 175, 55, 0.55);
+      text-transform: uppercase;
+      animation: fadeUp 0.4s 0.2s ease-out both;
+    }
+
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(0.3) translateY(10px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    #mode-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.85rem;
+    }
+
+    .mode-btn {
+      background: transparent;
+      border: 1px solid rgba(212, 175, 55, 0.3);
+      color: rgba(212, 175, 55, 0.55);
+      padding: 0.35rem 1.25rem;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      transition: all 0.2s;
+    }
+
+    .mode-btn:hover {
+      border-color: rgba(212, 175, 55, 0.6);
+      color: rgba(212, 175, 55, 0.85);
+    }
+
+    .mode-btn.active {
+      background: rgba(212, 175, 55, 0.18);
+      border-color: #d4af37;
+      color: #d4af37;
+    }
+
+    #roll-btn {
+      background: linear-gradient(135deg,
+        rgba(212, 175, 55, 0.22) 0%,
+        rgba(130, 80, 200, 0.22) 100%);
+      border: 1px solid rgba(212, 175, 55, 0.7);
+      color: #d4af37;
+      padding: 0.7rem 3rem;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #roll-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(212, 175, 55, 0.08);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    #roll-btn:hover::after { opacity: 1; }
+
+    #roll-btn:active { transform: scale(0.97); }
+
+    #roll-btn.rolling {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div id="title">EVA · Dice Roller</div>
+  <div id="canvas-wrap"></div>
+  <div id="result-area"></div>
+  <div id="mode-row">
+    <button class="mode-btn active" id="btn-single" onclick="setMode(1)">Single D20</button>
+    <button class="mode-btn" id="btn-double" onclick="setMode(2)">Double D20</button>
+  </div>
+  <button id="roll-btn" onclick="rollDice()">Roll</button>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+  <script>
+    /* ───────── Scene ───────── */
+    const wrap   = document.getElementById('canvas-wrap');
+    const W      = () => wrap.clientWidth;
+    const H      = () => wrap.clientHeight;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(W(), H());
+    wrap.appendChild(renderer.domElement);
+
+    const scene  = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(55, W() / H(), 0.1, 100);
+    camera.position.set(0, 0, 6.5);
+
+    /* lights */
+    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+
+    const gold = new THREE.PointLight(0xd4af37, 3.5, 18);
+    gold.position.set(4, 4, 4);
+    scene.add(gold);
+
+    const purple = new THREE.PointLight(0x8250cc, 2, 18);
+    purple.position.set(-4, -3, 3);
+    scene.add(purple);
+
+    const rim = new THREE.PointLight(0x4499ff, 1.2, 15);
+    rim.position.set(0, -5, -2);
+    scene.add(rim);
+
+    /* ───────── Dice state ───────── */
+    let mode    = 1;
+    let rolling = false;
+    let diceArr = [];
+
+    function makeDie(xPos) {
+      const geo = new THREE.IcosahedronGeometry(1.25, 0);
+
+      /* face material — deep navy with metallic sheen */
+      const mat = new THREE.MeshStandardMaterial({
+        color:             0x0e0e22,
+        metalness:         0.85,
+        roughness:         0.15,
+        emissive:          new THREE.Color(0x0a0818),
+        emissiveIntensity: 0.6,
+      });
+
+      /* edge glow */
+      const edges   = new THREE.EdgesGeometry(geo);
+      const edgeMat = new THREE.LineBasicMaterial({ color: 0xd4af37 });
+      const lines   = new THREE.LineSegments(edges, edgeMat);
+
+      const group = new THREE.Group();
+      group.add(new THREE.Mesh(geo, mat));
+      group.add(lines);
+      group.position.x = xPos;
+      group.rotation.set(
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2
+      );
+      scene.add(group);
+
+      return {
+        group,
+        spinning:   false,
+        result:     null,
+        startTime:  0,
+        duration:   0,
+        axis:       new THREE.Vector3(),
+      };
+    }
+
+    function buildDice() {
+      diceArr.forEach(d => scene.remove(d.group));
+      diceArr = [];
+      if (mode === 1) {
+        diceArr.push(makeDie(0));
+      } else {
+        diceArr.push(makeDie(-1.7));
+        diceArr.push(makeDie( 1.7));
+      }
+    }
+
+    buildDice();
+
+    /* ───────── Roll ───────── */
+    function rollDice() {
+      if (rolling) return;
+      rolling = true;
+
+      const btn = document.getElementById('roll-btn');
+      btn.classList.add('rolling');
+      document.getElementById('result-area').innerHTML = '';
+
+      const now = performance.now();
+
+      diceArr.forEach(d => {
+        d.result    = Math.floor(Math.random() * 20) + 1;
+        d.spinning  = true;
+        d.startTime = now;
+        d.duration  = 1600 + Math.random() * 600;   // 1.6–2.2 s
+        /* random tumble axis */
+        d.axis.set(
+          (Math.random() - 0.5) * 2,
+          (Math.random() - 0.5) * 2,
+          (Math.random() - 0.5) * 2
+        ).normalize();
+      });
+    }
+
+    /* easing: cubic ease-out */
+    function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+    /* ───────── Show results ───────── */
+    function showResults() {
+      const area = document.getElementById('result-area');
+      const nums = diceArr.map(d => d.result);
+
+      if (nums.length === 1) {
+        area.innerHTML = `<span class="roll-num">${nums[0]}</span>`;
+      } else {
+        const total = nums.reduce((a, b) => a + b, 0);
+        area.innerHTML =
+          `<span class="roll-num">${nums[0]}</span>` +
+          `<span class="roll-sep">+</span>` +
+          `<span class="roll-num">${nums[1]}</span>` +
+          `<span class="roll-total" style="align-self:flex-end;margin-bottom:0.6rem">= ${total}</span>`;
+      }
+    }
+
+    /* ───────── Render loop ───────── */
+    function animate(now) {
+      requestAnimationFrame(animate);
+
+      let anyStillSpinning = false;
+
+      diceArr.forEach(d => {
+        if (d.spinning) {
+          const t = Math.min((now - d.startTime) / d.duration, 1);
+          /* angular speed: starts fast (0.25 rad/frame) → zero */
+          const speed = (1 - easeOut(t)) * 0.22;
+
+          d.group.rotateOnAxis(d.axis, speed);
+          d.group.rotation.x += speed * 0.4;   /* extra wobble axes */
+          d.group.rotation.z += speed * 0.15;
+
+          if (t >= 1) d.spinning = false;
+          else         anyStillSpinning = true;
+        } else if (!rolling) {
+          /* gentle idle float */
+          d.group.rotation.y += 0.0035;
+          d.group.rotation.x += 0.0012;
+        }
+      });
+
+      /* finished */
+      if (rolling && !anyStillSpinning) {
+        rolling = false;
+        document.getElementById('roll-btn').classList.remove('rolling');
+        showResults();
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    animate(performance.now());
+
+    /* ───────── Mode toggle ───────── */
+    function setMode(m) {
+      if (rolling) return;
+      mode = m;
+      document.getElementById('btn-single').classList.toggle('active', m === 1);
+      document.getElementById('btn-double').classList.toggle('active', m === 2);
+      document.getElementById('result-area').innerHTML = '';
+      buildDice();
+    }
+
+    /* ───────── Resize ───────── */
+    window.addEventListener('resize', () => {
+      camera.aspect = W() / H();
+      camera.updateProjectionMatrix();
+      renderer.setSize(W(), H());
+    });
+  </script>
+</body>
+</html>
