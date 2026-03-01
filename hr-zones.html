@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EVA · Heart Rate Zones</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #07070f;
+    --surface:  #0d0d22;
+    --gold:     #d4af37;
+    --purple:   #8250cc;
+    --cyan:     #4499ff;
+    --z1:       #4499ff;
+    --z2:       #44cc88;
+    --z3:       #d4af37;
+    --z4:       #ff8844;
+    --z5:       #cc4466;
+    --text:     rgba(255,255,255,0.88);
+    --muted:    rgba(255,255,255,0.38);
+    --border:   rgba(212,175,55,0.18);
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, 'SF Pro Display', BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem 4rem;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+
+  .eyebrow {
+    font-size: 0.62rem;
+    font-weight: 300;
+    letter-spacing: 0.38em;
+    text-transform: uppercase;
+    color: var(--gold);
+    opacity: 0.75;
+    margin-bottom: 0.5rem;
+  }
+
+  h1 {
+    font-size: clamp(1.4rem, 4vw, 2rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--gold) 0%, #fff8e0 50%, var(--gold) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: none;
+    margin-bottom: 0.4rem;
+  }
+
+  .subtitle {
+    font-size: 0.8rem;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 1.8rem;
+    width: 100%;
+    max-width: 480px;
+    margin-bottom: 1.2rem;
+  }
+
+  .card-title {
+    font-size: 0.65rem;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--gold);
+    opacity: 0.65;
+    margin-bottom: 1.2rem;
+  }
+
+  .input-group {
+    margin-bottom: 1.2rem;
+  }
+
+  label {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+
+  input[type="number"] {
+    width: 100%;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(212,175,55,0.22);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    color: var(--text);
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-family: inherit;
+    transition: border-color 0.2s;
+    outline: none;
+    -moz-appearance: textfield;
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  input[type="number"]:focus {
+    border-color: var(--gold);
+    background: rgba(212,175,55,0.06);
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin: 1rem 0;
+  }
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+  .divider span {
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .hrr-display {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(212,175,55,0.06);
+    border: 1px solid rgba(212,175,55,0.18);
+    border-radius: 12px;
+    padding: 0.8rem 1rem;
+    margin-top: 0.8rem;
+  }
+  .hrr-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+  .hrr-value { font-size: 1.6rem; font-weight: 800; color: var(--gold); text-shadow: 0 0 20px rgba(212,175,55,0.4); }
+
+  .btn {
+    width: 100%;
+    padding: 0.9rem;
+    background: transparent;
+    border: 1px solid var(--gold);
+    border-radius: 12px;
+    color: var(--gold);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+    margin-top: 0.4rem;
+  }
+  .btn:hover {
+    background: linear-gradient(135deg, rgba(212,175,55,0.15), rgba(130,80,204,0.1));
+    border-color: rgba(212,175,55,0.8);
+    box-shadow: 0 0 24px rgba(212,175,55,0.18);
+    transform: translateY(-1px);
+  }
+  .btn:active { transform: translateY(0); }
+
+  /* Results */
+  .results {
+    width: 100%;
+    max-width: 480px;
+    display: none;
+    flex-direction: column;
+    gap: 0.7rem;
+    animation: fadeUp 0.4s cubic-bezier(0.4,0,0.2,1) forwards;
+  }
+  .results.visible { display: flex; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .zone-row {
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 1rem 1.2rem;
+    border-left: 3px solid var(--zcolor);
+    border-top: 1px solid rgba(255,255,255,0.05);
+    border-right: 1px solid rgba(255,255,255,0.05);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: start;
+    gap: 0.8rem;
+    transition: transform 0.2s;
+  }
+  .zone-row:hover { transform: translateX(3px); }
+
+  .zone-badge {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--zcolor) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--zcolor) 35%, transparent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: var(--zcolor);
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+  }
+
+  .zone-info { min-width: 0; }
+  .zone-name {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--zcolor);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.2rem;
+  }
+  .zone-desc {
+    font-size: 0.72rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .zone-range {
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .range-bpm {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--zcolor);
+    text-shadow: 0 0 16px color-mix(in srgb, var(--zcolor) 40%, transparent);
+    white-space: nowrap;
+  }
+  .range-pct {
+    font-size: 0.62rem;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+    text-align: right;
+    margin-top: 0.15rem;
+  }
+
+  .error {
+    font-size: 0.75rem;
+    color: #ff6666;
+    margin-top: 0.4rem;
+    padding: 0.5rem 0.8rem;
+    background: rgba(255,80,80,0.07);
+    border-radius: 8px;
+    border: 1px solid rgba(255,80,80,0.2);
+    display: none;
+  }
+  .error.visible { display: block; }
+
+  .footer-note {
+    margin-top: 1.8rem;
+    font-size: 0.65rem;
+    color: var(--muted);
+    text-align: center;
+    letter-spacing: 0.06em;
+    max-width: 360px;
+    line-height: 1.7;
+  }
+  .footer-note span { color: var(--gold); opacity: 0.7; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <p class="eyebrow">EVA · Performance</p>
+  <h1>Heart Rate Zones</h1>
+  <p class="subtitle">Karvonen method &nbsp;·&nbsp; Zones 1–5</p>
+</header>
+
+<div class="card">
+  <p class="card-title">Max Heart Rate</p>
+
+  <div class="input-group">
+    <label>Field Test Max HR (bpm) — preferred</label>
+    <input type="number" id="maxHR" placeholder="e.g. 192" min="100" max="250">
+  </div>
+
+  <div class="divider"><span>or estimate from age</span></div>
+
+  <div class="input-group">
+    <label>Age (years)</label>
+    <input type="number" id="age" placeholder="e.g. 31" min="10" max="100">
+  </div>
+</div>
+
+<div class="card">
+  <p class="card-title">Resting Heart Rate</p>
+  <div class="input-group">
+    <label>Resting HR (bpm) — first thing in the morning</label>
+    <input type="number" id="restHR" placeholder="e.g. 58" min="30" max="120">
+  </div>
+  <div class="hrr-display">
+    <div class="hrr-label">Heart Rate Reserve</div>
+    <div class="hrr-value" id="hrrValue">—</div>
+  </div>
+  <div class="error" id="errorMsg"></div>
+</div>
+
+<button class="btn" onclick="calculate()">Calculate My Zones</button>
+
+<div class="results" id="results"></div>
+
+<p class="footer-note">
+  <span>Karvonen formula</span> · Zone = (HRR × %) + Resting HR<br>
+  For best accuracy, test your true max HR before using this calculator.
+</p>
+
+<script>
+const ZONES = [
+  { num: 1, name: "Recovery",    pctLow: 0,    pctHigh: 0.60, color: "#4499ff",
+    desc: "Very light effort. Walk or easy jog. Could hold this for hours." },
+  { num: 2, name: "Aerobic Base", pctLow: 0.60, pctHigh: 0.70, color: "#44cc88",
+    desc: "Conversational pace. Building aerobic base. Most of your easy runs." },
+  { num: 3, name: "Tempo",        pctLow: 0.70, pctHigh: 0.80, color: "#d4af37",
+    desc: "Comfortably hard. Marathon to half-marathon effort. Limited sentences." },
+  { num: 4, name: "Threshold",    pctLow: 0.80, pctHigh: 0.90, color: "#ff8844",
+    desc: "Lactate threshold. Tempo runs and 10K race effort. Uncomfortable." },
+  { num: 5, name: "Max Effort",   pctLow: 0.90, pctHigh: 1.00, color: "#cc4466",
+    desc: "All out. Intervals and 5K race. Unsustainable for long. Enjoy." },
+];
+
+const inputs = ['maxHR','age','restHR'];
+inputs.forEach(id => {
+  document.getElementById(id).addEventListener('input', updateHRR);
+});
+
+function getMaxHR() {
+  const m = parseFloat(document.getElementById('maxHR').value);
+  if (m >= 100 && m <= 250) return m;
+  const a = parseFloat(document.getElementById('age').value);
+  if (a >= 10 && a <= 100) return 220 - a;
+  return null;
+}
+
+function updateHRR() {
+  const max = getMaxHR();
+  const rest = parseFloat(document.getElementById('restHR').value);
+  if (max && rest >= 30 && rest < max) {
+    document.getElementById('hrrValue').textContent = Math.round(max - rest);
+  } else {
+    document.getElementById('hrrValue').textContent = '—';
+  }
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+
+function clearError() {
+  document.getElementById('errorMsg').classList.remove('visible');
+}
+
+function calculate() {
+  clearError();
+  const max = getMaxHR();
+  const rest = parseFloat(document.getElementById('restHR').value);
+
+  if (!max) { showError('Enter your Max HR or Age to continue.'); return; }
+  if (!rest || rest < 30 || rest >= max) { showError('Enter a valid Resting HR (30–' + (max - 1) + ' bpm).'); return; }
+
+  const hrr = max - rest;
+  const container = document.getElementById('results');
+  container.innerHTML = '';
+
+  ZONES.forEach((z, i) => {
+    const low  = z.num === 1 ? null : Math.round(hrr * z.pctLow  + rest);
+    const high = z.num === 5 ? null : Math.round(hrr * z.pctHigh + rest);
+
+    let rangeText;
+    if      (z.num === 1) rangeText = `< ${high}`;
+    else if (z.num === 5) rangeText = `${low}+`;
+    else                  rangeText = `${low}–${high}`;
+
+    const pctText = z.num === 5 ? `${Math.round(z.pctLow*100)}–100% HRR`
+                  : z.num === 1 ? `< ${Math.round(z.pctHigh*100)}% HRR`
+                  : `${Math.round(z.pctLow*100)}–${Math.round(z.pctHigh*100)}% HRR`;
+
+    const row = document.createElement('div');
+    row.className = 'zone-row';
+    row.style.setProperty('--zcolor', z.color);
+    row.style.animationDelay = `${i * 60}ms`;
+    row.innerHTML = `
+      <div class="zone-badge">Z${z.num}</div>
+      <div class="zone-info">
+        <div class="zone-name">${z.name}</div>
+        <div class="zone-desc">${z.desc}</div>
+      </div>
+      <div class="zone-range">
+        <div class="range-bpm">${rangeText}</div>
+        <div class="range-pct">${pctText}</div>
+      </div>`;
+    container.appendChild(row);
+  });
+
+  container.classList.add('visible');
+  container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+</script>
+</body>
+</html>
