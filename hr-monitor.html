@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EVA · Heart Monitor</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #07070f;
+    --surface: #0d0d22;
+    --gold:    #d4af37;
+    --purple:  #8250cc;
+    --text:    rgba(255,255,255,0.88);
+    --muted:   rgba(255,255,255,0.38);
+    --border:  rgba(212,175,55,0.18);
+    --z1: #4499ff;
+    --z2: #44cc88;
+    --z3: #d4af37;
+    --z4: #ff8844;
+    --z5: #cc4466;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, 'SF Pro Display', BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem 4rem;
+  }
+
+  .header { text-align: center; margin-bottom: 2rem; }
+  .eyebrow {
+    font-size: 0.62rem; font-weight: 300; letter-spacing: 0.38em;
+    text-transform: uppercase; color: var(--gold); opacity: 0.75; margin-bottom: 0.5rem;
+  }
+  h1 {
+    font-size: clamp(1.4rem, 4vw, 2rem); font-weight: 800; letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--gold) 0%, #fff8e0 50%, var(--gold) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    margin-bottom: 0.4rem;
+  }
+  .subtitle { font-size: 0.8rem; color: var(--muted); letter-spacing: 0.04em; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 1.8rem;
+    width: 100%;
+    max-width: 480px;
+    margin-bottom: 1.2rem;
+  }
+  .card-title {
+    font-size: 0.65rem; letter-spacing: 0.28em; text-transform: uppercase;
+    color: var(--gold); opacity: 0.65; margin-bottom: 1.2rem;
+  }
+
+  /* Heartbeat display */
+  .heart-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 0 1.5rem;
+    gap: 1rem;
+  }
+
+  .heart-icon {
+    font-size: 3.2rem;
+    line-height: 1;
+    filter: drop-shadow(0 0 12px var(--current-zone, var(--z1)));
+    transition: filter 0.5s;
+  }
+  .heart-icon.beat {
+    animation: heartbeat 0.6s cubic-bezier(0.4,0,0.2,1);
+  }
+  @keyframes heartbeat {
+    0%   { transform: scale(1); }
+    20%  { transform: scale(1.25); }
+    40%  { transform: scale(0.95); }
+    60%  { transform: scale(1.18); }
+    80%  { transform: scale(0.98); }
+    100% { transform: scale(1); }
+  }
+
+  .bpm-display {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+  }
+  .bpm-number {
+    font-size: 4.5rem;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    color: var(--current-zone, var(--z1));
+    text-shadow: 0 0 32px color-mix(in srgb, var(--current-zone, var(--z1)) 50%, transparent);
+    transition: color 0.5s, text-shadow 0.5s;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .bpm-unit {
+    font-size: 1rem;
+    font-weight: 400;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Zone pill */
+  .zone-pill {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 1.2rem;
+    border-radius: 100px;
+    border: 1px solid color-mix(in srgb, var(--current-zone, var(--z1)) 35%, transparent);
+    background: color-mix(in srgb, var(--current-zone, var(--z1)) 10%, transparent);
+    transition: all 0.5s;
+  }
+  .zone-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--current-zone, var(--z1));
+    box-shadow: 0 0 8px var(--current-zone, var(--z1));
+    transition: all 0.5s;
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.85); }
+  }
+  .zone-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--current-zone, var(--z1));
+    transition: color 0.5s;
+  }
+
+  /* ECG line */
+  .ecg-container {
+    width: 100%;
+    height: 50px;
+    margin: 0.5rem 0;
+    overflow: hidden;
+    position: relative;
+  }
+  .ecg-svg {
+    width: 200%;
+    height: 100%;
+    position: absolute;
+    left: 0;
+  }
+  .ecg-line {
+    fill: none;
+    stroke: var(--current-zone, var(--z1));
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.7;
+    transition: stroke 0.5s;
+  }
+  .ecg-svg.animate {
+    animation: ecg-scroll 2s linear infinite;
+  }
+  @keyframes ecg-scroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+
+  /* Input section */
+  .input-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  .input-group { margin-bottom: 0; }
+  label {
+    display: block; font-size: 0.72rem; color: var(--muted);
+    letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.5rem;
+  }
+  input[type="number"] {
+    width: 100%;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(212,175,55,0.22);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    color: var(--text);
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-family: inherit;
+    transition: border-color 0.2s;
+    outline: none;
+    -moz-appearance: textfield;
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  input[type="number"]:focus {
+    border-color: var(--gold);
+    background: rgba(212,175,55,0.06);
+  }
+
+  .btn {
+    width: 100%; padding: 0.9rem;
+    background: transparent; border: 1px solid var(--gold);
+    border-radius: 12px; color: var(--gold);
+    font-size: 0.82rem; font-weight: 700; letter-spacing: 0.16em;
+    text-transform: uppercase; cursor: pointer; font-family: inherit;
+    transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+    margin-top: 0.4rem;
+  }
+  .btn:hover {
+    background: linear-gradient(135deg, rgba(212,175,55,0.15), rgba(130,80,204,0.1));
+    border-color: rgba(212,175,55,0.8);
+    box-shadow: 0 0 24px rgba(212,175,55,0.18);
+    transform: translateY(-1px);
+  }
+  .btn:active { transform: translateY(0); }
+
+  /* Zone breakdown */
+  .zone-bands {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .zone-band {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.55rem 0.9rem;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.05);
+    background: rgba(255,255,255,0.02);
+    transition: all 0.4s;
+  }
+  .zone-band.active {
+    border-color: color-mix(in srgb, var(--zc) 40%, transparent);
+    background: color-mix(in srgb, var(--zc) 8%, transparent);
+  }
+  .band-num {
+    width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.68rem; font-weight: 800;
+    background: color-mix(in srgb, var(--zc) 15%, transparent);
+    color: var(--zc);
+    border: 1px solid color-mix(in srgb, var(--zc) 30%, transparent);
+  }
+  .band-name {
+    flex: 1; font-size: 0.72rem; font-weight: 600;
+    color: rgba(255,255,255,0.55);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .zone-band.active .band-name { color: var(--zc); }
+  .band-range {
+    font-size: 0.75rem; font-weight: 700;
+    color: rgba(255,255,255,0.3);
+    font-variant-numeric: tabular-nums;
+  }
+  .zone-band.active .band-range { color: var(--zc); }
+
+  .info-note {
+    font-size: 0.65rem; color: var(--muted); text-align: center;
+    margin-top: 1rem; letter-spacing: 0.04em; line-height: 1.7;
+  }
+  .info-note span { color: var(--gold); opacity: 0.75; }
+
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <p class="eyebrow">EVA · Performance</p>
+  <h1>Heart Monitor</h1>
+  <p class="subtitle">Live zone detection &nbsp;·&nbsp; Real-time feedback</p>
+</header>
+
+<!-- Live Monitor Card -->
+<div class="card">
+  <p class="card-title">Current Heart Rate</p>
+
+  <div class="heart-display">
+    <div class="heart-icon" id="heartIcon">❤️</div>
+
+    <div class="bpm-display">
+      <div class="bpm-number" id="bpmNumber">—</div>
+      <div class="bpm-unit">bpm</div>
+    </div>
+
+    <div class="ecg-container">
+      <svg class="ecg-svg" id="ecgSvg" viewBox="0 0 800 50" preserveAspectRatio="none">
+        <path class="ecg-line" id="ecgPath" d="
+          M0,25 L40,25 L50,25 L55,5 L60,45 L65,10 L70,25 L120,25
+          L160,25 L170,25 L175,5 L180,45 L185,10 L190,25 L240,25
+          L280,25 L290,25 L295,5 L300,45 L305,10 L310,25 L360,25
+          L400,25 L410,25 L415,5 L420,45 L425,10 L430,25 L480,25
+          L520,25 L530,25 L535,5 L540,45 L545,10 L550,25 L600,25
+          L640,25 L650,25 L655,5 L660,45 L665,10 L670,25 L720,25
+          L760,25 L770,25 L775,5 L780,45 L785,10 L790,25 L800,25
+        "/>
+      </svg>
+    </div>
+
+    <div class="zone-pill" id="zonePill">
+      <div class="zone-dot" id="zoneDot"></div>
+      <div class="zone-label" id="zoneLabel">Enter HR below</div>
+    </div>
+  </div>
+
+  <!-- HR input -->
+  <div style="display:flex;gap:0.8rem;align-items:flex-end;margin-top:0.5rem;">
+    <div style="flex:1;">
+      <label>Enter Current HR (bpm)</label>
+      <input type="number" id="currentHR" placeholder="e.g. 142" min="40" max="250">
+    </div>
+    <button class="btn" style="width:auto;padding:0.75rem 1.2rem;white-space:nowrap;" onclick="readHR()">Read</button>
+  </div>
+
+  <p class="info-note" style="margin-top:0.8rem;">
+    Tap <span>Read</span> after entering your HR. Configure max/resting HR below for accurate zones.
+  </p>
+</div>
+
+<!-- Profile Card -->
+<div class="card">
+  <p class="card-title">HR Profile (Karvonen)</p>
+  <div class="input-row">
+    <div class="input-group">
+      <label>Max HR (bpm)</label>
+      <input type="number" id="maxHR" placeholder="192" min="100" max="250">
+    </div>
+    <div class="input-group">
+      <label>Resting HR (bpm)</label>
+      <input type="number" id="restHR" placeholder="58" min="30" max="120">
+    </div>
+  </div>
+  <button class="btn" onclick="saveProfile()">Save Profile</button>
+  <p class="info-note" style="margin-top:0.8rem;">
+    Profile saved in browser. <span>220 − age</span> if no field test max available.
+  </p>
+</div>
+
+<!-- Zone Breakdown Card -->
+<div class="card" id="zoneCard" class="hidden">
+  <p class="card-title">Zone Map</p>
+  <div class="zone-bands" id="zoneBands"></div>
+</div>
+
+<p class="info-note" style="max-width:360px;">
+  <span>Karvonen formula</span> · Zone = (HRR × %) + Resting HR<br>
+  Manual HR entry — or use a chest strap/watch and type the reading.
+</p>
+
+<script>
+const ZONES = [
+  { num: 1, name: "Recovery",    pctLow: 0,    pctHigh: 0.60, color: "#4499ff" },
+  { num: 2, name: "Aerobic",     pctLow: 0.60, pctHigh: 0.70, color: "#44cc88" },
+  { num: 3, name: "Tempo",       pctLow: 0.70, pctHigh: 0.80, color: "#d4af37" },
+  { num: 4, name: "Threshold",   pctLow: 0.80, pctHigh: 0.90, color: "#ff8844" },
+  { num: 5, name: "Max Effort",  pctLow: 0.90, pctHigh: 1.00, color: "#cc4466" },
+];
+
+const LS_MAX  = 'eva_hr_max';
+const LS_REST = 'eva_hr_rest';
+
+// Boot: restore saved profile
+window.addEventListener('DOMContentLoaded', () => {
+  const max  = localStorage.getItem(LS_MAX);
+  const rest = localStorage.getItem(LS_REST);
+  if (max)  document.getElementById('maxHR').value  = max;
+  if (rest) document.getElementById('restHR').value = rest;
+  if (max && rest) buildZoneMap(parseFloat(max), parseFloat(rest));
+
+  // Start ECG animation
+  document.getElementById('ecgSvg').classList.add('animate');
+});
+
+function getProfile() {
+  const max  = parseFloat(document.getElementById('maxHR').value)  || parseFloat(localStorage.getItem(LS_MAX));
+  const rest = parseFloat(document.getElementById('restHR').value) || parseFloat(localStorage.getItem(LS_REST));
+  return { max, rest };
+}
+
+function saveProfile() {
+  const max  = parseFloat(document.getElementById('maxHR').value);
+  const rest = parseFloat(document.getElementById('restHR').value);
+  if (!max || !rest) return;
+  localStorage.setItem(LS_MAX, max);
+  localStorage.setItem(LS_REST, rest);
+  buildZoneMap(max, rest);
+  // Flash button
+  const btn = event.target;
+  btn.textContent = 'Saved ✓';
+  setTimeout(() => { btn.textContent = 'Save Profile'; }, 1500);
+}
+
+function getZoneForHR(hr, max, rest) {
+  if (!max || !rest || hr < rest) return null;
+  const hrr = max - rest;
+  const pct = (hr - rest) / hrr;
+  for (const z of ZONES) {
+    if (pct < z.pctHigh || z.num === 5) return z;
+  }
+  return ZONES[4];
+}
+
+function readHR() {
+  const hr = parseFloat(document.getElementById('currentHR').value);
+  if (!hr || hr < 40 || hr > 250) return;
+
+  const { max, rest } = getProfile();
+  const zone = max && rest ? getZoneForHR(hr, max, rest) : null;
+  const color = zone ? zone.color : '#8250cc';
+
+  // Update BPM display
+  document.getElementById('bpmNumber').textContent = Math.round(hr);
+  document.documentElement.style.setProperty('--current-zone', color);
+
+  // Update zone pill
+  document.getElementById('zoneLabel').textContent = zone
+    ? `Zone ${zone.num} — ${zone.name}`
+    : 'Zone unknown — set HR profile';
+  document.getElementById('zoneDot').style.background = color;
+  document.getElementById('zoneDot').style.boxShadow = `0 0 8px ${color}`;
+
+  // Update zone pill border/bg via inline style
+  const pill = document.getElementById('zonePill');
+  pill.style.borderColor = `color-mix(in srgb, ${color} 35%, transparent)`;
+  pill.style.background   = `color-mix(in srgb, ${color} 10%, transparent)`;
+
+  // Heartbeat animation
+  const heart = document.getElementById('heartIcon');
+  heart.classList.remove('beat');
+  void heart.offsetWidth;
+  heart.classList.add('beat');
+  heart.style.filter = `drop-shadow(0 0 16px ${color})`;
+
+  // Update ECG line color
+  document.getElementById('ecgPath').style.stroke = color;
+
+  // Update zone bands
+  if (zone) updateActiveBand(zone.num);
+}
+
+function buildZoneMap(max, rest) {
+  const hrr = max - rest;
+  const container = document.getElementById('zoneBands');
+  const card = document.getElementById('zoneCard');
+  container.innerHTML = '';
+  card.style.display = 'block';
+
+  ZONES.forEach(z => {
+    const low  = z.num === 1 ? rest : Math.round(hrr * z.pctLow + rest);
+    const high = z.num === 5 ? max  : Math.round(hrr * z.pctHigh + rest);
+    const rangeText = z.num === 1 ? `< ${high}` : z.num === 5 ? `${low}+` : `${low}–${high}`;
+
+    const band = document.createElement('div');
+    band.className = 'zone-band';
+    band.id = `band-${z.num}`;
+    band.style.setProperty('--zc', z.color);
+    band.innerHTML = `
+      <div class="band-num" style="background:color-mix(in srgb, ${z.color} 15%, transparent);color:${z.color};border-color:color-mix(in srgb, ${z.color} 30%, transparent);">Z${z.num}</div>
+      <div class="band-name">${z.name}</div>
+      <div class="band-range">${rangeText}</div>`;
+    container.appendChild(band);
+  });
+}
+
+function updateActiveBand(activeNum) {
+  ZONES.forEach(z => {
+    const band = document.getElementById(`band-${z.num}`);
+    if (!band) return;
+    if (z.num === activeNum) {
+      band.classList.add('active');
+      band.style.borderColor = `color-mix(in srgb, ${z.color} 40%, transparent)`;
+      band.style.background  = `color-mix(in srgb, ${z.color} 8%, transparent)`;
+      band.querySelectorAll('.band-name, .band-range').forEach(el => el.style.color = z.color);
+    } else {
+      band.classList.remove('active');
+      band.style.borderColor = 'rgba(255,255,255,0.05)';
+      band.style.background  = 'rgba(255,255,255,0.02)';
+      band.querySelectorAll('.band-name, .band-range').forEach(el => el.style.color = '');
+    }
+  });
+}
+
+// Allow Enter key on HR input
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('currentHR').addEventListener('keydown', e => {
+    if (e.key === 'Enter') readHR();
+  });
+});
+</script>
+</body>
+</html>

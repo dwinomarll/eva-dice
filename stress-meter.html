@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EVA · Stress Meter</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #07070f;
+    --surface: #0d0d22;
+    --gold:    #d4af37;
+    --purple:  #8250cc;
+    --text:    rgba(255,255,255,0.88);
+    --muted:   rgba(255,255,255,0.38);
+    --border:  rgba(212,175,55,0.18);
+    --s1: #44cc88;
+    --s2: #4499ff;
+    --s3: #d4af37;
+    --s4: #ff8844;
+    --s5: #cc4466;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, 'SF Pro Display', BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem 4rem;
+  }
+
+  .header { text-align: center; margin-bottom: 2rem; }
+  .eyebrow {
+    font-size: 0.62rem; font-weight: 300; letter-spacing: 0.38em;
+    text-transform: uppercase; color: var(--gold); opacity: 0.75; margin-bottom: 0.5rem;
+  }
+  h1 {
+    font-size: clamp(1.4rem, 4vw, 2rem); font-weight: 800; letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--gold) 0%, #fff8e0 50%, var(--gold) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    margin-bottom: 0.4rem;
+  }
+  .subtitle { font-size: 0.8rem; color: var(--muted); letter-spacing: 0.04em; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 1.8rem;
+    width: 100%;
+    max-width: 480px;
+    margin-bottom: 1.2rem;
+  }
+  .card-title {
+    font-size: 0.65rem; letter-spacing: 0.28em; text-transform: uppercase;
+    color: var(--gold); opacity: 0.65; margin-bottom: 1.2rem;
+  }
+
+  .input-group { margin-bottom: 1.2rem; }
+  label {
+    display: block; font-size: 0.72rem; color: var(--muted);
+    letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 0.5rem;
+  }
+  .label-note {
+    font-size: 0.65rem; color: var(--muted); opacity: 0.7;
+    font-weight: normal; text-transform: none; letter-spacing: 0.02em;
+    margin-left: 0.4rem;
+  }
+
+  input[type="number"], input[type="range"] {
+    width: 100%;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(212,175,55,0.22);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    color: var(--text);
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-family: inherit;
+    transition: border-color 0.2s;
+    outline: none;
+    -moz-appearance: textfield;
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  input[type="number"]:focus {
+    border-color: var(--gold);
+    background: rgba(212,175,55,0.06);
+  }
+
+  /* Range slider */
+  input[type="range"] {
+    padding: 0.4rem 0;
+    height: 2.4rem;
+    cursor: pointer;
+    accent-color: var(--gold);
+    background: transparent;
+    border: none;
+    -webkit-appearance: none;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(to right, var(--gold) var(--prog, 0%), rgba(255,255,255,0.1) var(--prog, 0%));
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--gold);
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 12px rgba(212,175,55,0.4);
+    margin-top: -9px;
+    cursor: pointer;
+  }
+  input[type="range"]:focus { outline: none; }
+
+  .range-track {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.3rem;
+  }
+  .range-track span {
+    font-size: 0.62rem;
+    color: var(--muted);
+  }
+  .range-value {
+    text-align: right;
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--gold);
+    margin-top: 0.3rem;
+  }
+
+  .btn {
+    width: 100%; padding: 0.9rem;
+    background: transparent; border: 1px solid var(--gold);
+    border-radius: 12px; color: var(--gold);
+    font-size: 0.82rem; font-weight: 700; letter-spacing: 0.16em;
+    text-transform: uppercase; cursor: pointer; font-family: inherit;
+    transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+    margin-top: 0.4rem;
+  }
+  .btn:hover {
+    background: linear-gradient(135deg, rgba(212,175,55,0.15), rgba(130,80,204,0.1));
+    border-color: rgba(212,175,55,0.8);
+    box-shadow: 0 0 24px rgba(212,175,55,0.18);
+    transform: translateY(-1px);
+  }
+  .btn:active { transform: translateY(0); }
+
+  /* Results */
+  .result-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 1.8rem;
+    width: 100%;
+    max-width: 480px;
+    margin-bottom: 1.2rem;
+    display: none;
+    animation: fadeUp 0.4s cubic-bezier(0.4,0,0.2,1) forwards;
+  }
+  .result-card.visible { display: block; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Stress gauge */
+  .gauge-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.2rem;
+    padding: 1.2rem 0;
+  }
+
+  .gauge-label-top {
+    font-size: 0.62rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .stress-number {
+    font-size: 6rem;
+    font-weight: 900;
+    letter-spacing: -0.06em;
+    line-height: 1;
+    color: var(--sc, var(--s3));
+    text-shadow: 0 0 40px color-mix(in srgb, var(--sc, var(--s3)) 50%, transparent);
+    transition: color 0.5s, text-shadow 0.5s;
+    font-variant-numeric: tabular-nums;
+  }
+  .stress-sublabel {
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--sc, var(--s3));
+    transition: color 0.5s;
+  }
+
+  /* Stress bar */
+  .stress-bar-container {
+    width: 100%;
+    display: flex;
+    gap: 0.3rem;
+    margin: 0.5rem 0;
+  }
+  .stress-segment {
+    flex: 1;
+    height: 8px;
+    border-radius: 100px;
+    opacity: 0.2;
+    transition: opacity 0.4s, transform 0.2s;
+  }
+  .stress-segment.lit {
+    opacity: 1;
+    transform: scaleY(1.4);
+  }
+
+  /* Recommendation */
+  .recommendation {
+    background: color-mix(in srgb, var(--sc, var(--s3)) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--sc, var(--s3)) 25%, transparent);
+    border-radius: 14px;
+    padding: 1rem 1.2rem;
+    transition: all 0.5s;
+  }
+  .rec-header {
+    font-size: 0.62rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+  }
+  .rec-text {
+    font-size: 0.88rem;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  .rec-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 100px;
+    background: color-mix(in srgb, var(--sc, var(--s3)) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--sc, var(--s3)) 30%, transparent);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--sc, var(--s3));
+    transition: all 0.5s;
+  }
+
+  /* Factor breakdown */
+  .factors {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .factor-row {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+  }
+  .factor-label {
+    font-size: 0.68rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    width: 90px;
+    flex-shrink: 0;
+  }
+  .factor-bar-bg {
+    flex: 1;
+    height: 4px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .factor-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--sc, var(--s3));
+    transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+  }
+  .factor-pct {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--muted);
+    width: 28px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .reset-btn {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-family: inherit;
+    padding: 0.55rem 1rem;
+    margin-top: 0.8rem;
+    transition: all 0.2s;
+    width: 100%;
+  }
+  .reset-btn:hover { border-color: rgba(255,255,255,0.2); color: var(--text); }
+
+  .footer-note {
+    margin-top: 1.8rem;
+    font-size: 0.65rem;
+    color: var(--muted);
+    text-align: center;
+    letter-spacing: 0.06em;
+    max-width: 360px;
+    line-height: 1.7;
+  }
+  .footer-note span { color: var(--gold); opacity: 0.7; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <p class="eyebrow">EVA · Performance</p>
+  <h1>Stress Meter</h1>
+  <p class="subtitle">Workload analysis &nbsp;·&nbsp; Break intelligence</p>
+</header>
+
+<div class="card">
+  <p class="card-title">Session Input</p>
+
+  <div class="input-group">
+    <label>Rolls This Session</label>
+    <input type="number" id="rolls" placeholder="e.g. 8" min="0" max="200">
+  </div>
+
+  <div class="input-group">
+    <label>Session Duration <span class="label-note">(minutes)</span></label>
+    <input type="number" id="minutes" placeholder="e.g. 45" min="1" max="480">
+  </div>
+
+  <div class="input-group">
+    <label>
+      Felt Intensity
+      <span class="label-note" id="intensityLabel">5 / 10</span>
+    </label>
+    <input type="range" id="intensity" min="1" max="10" value="5"
+      oninput="updateSlider(this)">
+    <div class="range-track">
+      <span>Light</span>
+      <span>Moderate</span>
+      <span>Max</span>
+    </div>
+  </div>
+
+  <button class="btn" onclick="calculate()">Analyze Stress</button>
+</div>
+
+<!-- Result -->
+<div class="result-card" id="resultCard">
+  <p class="card-title">Stress Reading</p>
+
+  <div class="gauge-area">
+    <div class="gauge-label-top">Current Load Level</div>
+
+    <div class="stress-number" id="stressNum">—</div>
+    <div class="stress-sublabel" id="stressName">—</div>
+
+    <div class="stress-bar-container" id="stressBar">
+      <div class="stress-segment" style="background:var(--s1);" data-level="1"></div>
+      <div class="stress-segment" style="background:var(--s2);" data-level="2"></div>
+      <div class="stress-segment" style="background:var(--s3);" data-level="3"></div>
+      <div class="stress-segment" style="background:var(--s4);" data-level="4"></div>
+      <div class="stress-segment" style="background:var(--s5);" data-level="5"></div>
+    </div>
+  </div>
+
+  <div class="recommendation" id="recBox">
+    <div class="rec-header">Eva's Recommendation</div>
+    <div class="rec-text" id="recText">—</div>
+    <div class="rec-action" id="recAction">—</div>
+  </div>
+
+  <div class="factors" id="factorsBox"></div>
+
+  <button class="reset-btn" onclick="resetForm()">Reset Session</button>
+</div>
+
+<p class="footer-note">
+  <span>Stress formula</span> · Pace + Intensity + Duration weighted<br>
+  High stress = real cost to focus and decision quality. Take the break.
+</p>
+
+<script>
+const LEVELS = [
+  { level: 1, name: "In the Zone",    color: "#44cc88",
+    text: "Flow state. Decisions are clean, focus is locked. You're operating at full capacity.",
+    action: "Keep rolling" },
+  { level: 2, name: "Steady",         color: "#4499ff",
+    text: "Good pace. Stay hydrated. The body is processing — stay deliberate with each roll.",
+    action: "Hydrate + continue" },
+  { level: 3, name: "Building Heat",  color: "#d4af37",
+    text: "Mental load is climbing. Slow down between rolls. One sloppy move costs more than a break.",
+    action: "Breathe. Roll slow." },
+  { level: 4, name: "High Load",      color: "#ff8844",
+    text: "Fatigue is accumulating. Stop rolling. 5-minute break — walk, breathe, water. Not optional.",
+    action: "5-min break now" },
+  { level: 5, name: "Overloaded",     color: "#cc4466",
+    text: "You're running hot. Critical thinking is compromised. A bad roll here costs real XP.",
+    action: "15-min break. Stop." },
+];
+
+function updateSlider(el) {
+  const pct = ((el.value - 1) / 9) * 100;
+  el.style.setProperty('--prog', `${pct}%`);
+  document.getElementById('intensityLabel').textContent = `${el.value} / 10`;
+}
+
+// Init slider on load
+window.addEventListener('DOMContentLoaded', () => {
+  const slider = document.getElementById('intensity');
+  updateSlider(slider);
+});
+
+function calculate() {
+  const rolls    = parseFloat(document.getElementById('rolls').value)    || 0;
+  const minutes  = parseFloat(document.getElementById('minutes').value)  || 1;
+  const intensity= parseFloat(document.getElementById('intensity').value)|| 5;
+
+  // Factor 1: Pace (rolls per hour)
+  const rollsPerHour = (rolls / minutes) * 60;
+  // 0 rolls/hr = 0, 30+ rolls/hr = max
+  const paceFactor = Math.min(rollsPerHour / 30, 1);
+
+  // Factor 2: Intensity (1-10 → 0-1)
+  const intensityFactor = (intensity - 1) / 9;
+
+  // Factor 3: Duration (0-120min → 0-1, past 120 = max)
+  const durationFactor = Math.min(minutes / 120, 1);
+
+  // Weighted stress score (0-1)
+  const rawStress = (paceFactor * 0.40) + (intensityFactor * 0.40) + (durationFactor * 0.20);
+
+  // Map to 1-5
+  const stressLevel = Math.min(Math.max(Math.round(rawStress * 4) + 1, 1), 5);
+  const levelData = LEVELS[stressLevel - 1];
+
+  // Show result
+  showResult(stressLevel, levelData, {
+    pace: paceFactor,
+    intensity: intensityFactor,
+    duration: durationFactor
+  });
+}
+
+function showResult(level, data, factors) {
+  const card = document.getElementById('resultCard');
+  card.classList.add('visible');
+
+  // Update color CSS var
+  document.documentElement.style.setProperty('--sc', data.color);
+
+  // Number + name
+  const numEl = document.getElementById('stressNum');
+  numEl.textContent = level;
+  numEl.style.color = data.color;
+  numEl.style.textShadow = `0 0 40px color-mix(in srgb, ${data.color} 50%, transparent)`;
+
+  const nameEl = document.getElementById('stressName');
+  nameEl.textContent = data.name;
+  nameEl.style.color = data.color;
+
+  // Bar segments
+  document.querySelectorAll('.stress-segment').forEach(seg => {
+    const segLevel = parseInt(seg.dataset.level);
+    seg.classList.toggle('lit', segLevel <= level);
+  });
+
+  // Recommendation
+  const recBox = document.getElementById('recBox');
+  recBox.style.background = `color-mix(in srgb, ${data.color} 8%, transparent)`;
+  recBox.style.borderColor = `color-mix(in srgb, ${data.color} 25%, transparent)`;
+  document.getElementById('recText').textContent = data.text;
+  const recAction = document.getElementById('recAction');
+  recAction.textContent = data.action;
+  recAction.style.background = `color-mix(in srgb, ${data.color} 15%, transparent)`;
+  recAction.style.borderColor = `color-mix(in srgb, ${data.color} 30%, transparent)`;
+  recAction.style.color = data.color;
+
+  // Factor breakdown
+  const factorsBox = document.getElementById('factorsBox');
+  factorsBox.innerHTML = `
+    <div style="font-size:0.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.18em;margin-bottom:0.4rem;">Load Breakdown</div>
+    ${makeFactorRow('Pace',      factors.pace,      data.color)}
+    ${makeFactorRow('Intensity', factors.intensity, data.color)}
+    ${makeFactorRow('Duration',  factors.duration,  data.color)}
+  `;
+
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function makeFactorRow(label, value, color) {
+  const pct = Math.round(value * 100);
+  return `
+    <div class="factor-row">
+      <div class="factor-label">${label}</div>
+      <div class="factor-bar-bg">
+        <div class="factor-bar-fill" style="width:${pct}%;background:${color};"></div>
+      </div>
+      <div class="factor-pct">${pct}%</div>
+    </div>`;
+}
+
+function resetForm() {
+  document.getElementById('rolls').value = '';
+  document.getElementById('minutes').value = '';
+  document.getElementById('intensity').value = 5;
+  updateSlider(document.getElementById('intensity'));
+  document.getElementById('resultCard').classList.remove('visible');
+}
+</script>
+</body>
+</html>
