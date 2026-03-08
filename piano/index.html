@@ -1,44 +1,388 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>Chrome Piano</title>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css" integrity="sha384-B0vP5xmATw1+K9KRQjQERJvTumQW0nPEzvF6L/Z6nronJ3oUOFUFpCjEUQouq2+l" crossorigin="anonymous">
-    <script>
-      // Shim chrome.storage.sync with localStorage
-      window.chrome = window.chrome || {};
-      chrome.storage = chrome.storage || {};
-      chrome.storage.sync = {
-        get: function(keys, callback) {
-          var result = {};
-          var keyList = Array.isArray(keys) ? keys : [keys];
-          keyList.forEach(function(k) {
-            var val = localStorage.getItem('piano_' + k);
-            if (val !== null) {
-              try { result[k] = JSON.parse(val); } catch(e) { result[k] = val; }
-            }
-          });
-          if (callback) callback(result);
-        },
-        set: function(items, callback) {
-          Object.keys(items).forEach(function(k) {
-            localStorage.setItem('piano_' + k, JSON.stringify(items[k]));
-          });
-          if (callback) callback();
-        }
-      };
-    </script>
-    <script>
-      // theme.js inline — patched for web
-      "undefined"!=typeof reactHotLoaderGlobal&&reactHotLoaderGlobal.default.signature;
-      chrome.storage.sync.get(["key"],function(e){
-        void 0!==e.key&&"DARK"===e.key&&(document.body.style.backgroundColor="#191819");
-      });
-    </script>
-  </head>
-  <body>
-    <div id="popup"></div>
-    <script src="popup.js"></script>
-  </body>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Piano</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      overflow-x: hidden;
+      user-select: none;
+    }
+    h1 {
+      font-size: 1.4rem;
+      margin: 16px 0 4px;
+      letter-spacing: 2px;
+      color: #c4b5fd;
+    }
+    .subtitle {
+      font-size: 0.75rem;
+      color: #666;
+      margin-bottom: 12px;
+    }
+
+    /* Piano container */
+    .piano-wrap {
+      position: relative;
+      display: flex;
+      margin: 0 auto;
+    }
+
+    /* White keys */
+    .key {
+      width: 44px;
+      height: 180px;
+      background: linear-gradient(to bottom, #fff, #e8e8e8);
+      border: 1px solid #bbb;
+      border-radius: 0 0 6px 6px;
+      cursor: pointer;
+      position: relative;
+      z-index: 1;
+      transition: background 0.06s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      padding-bottom: 8px;
+    }
+    .key:active, .key.active {
+      background: linear-gradient(to bottom, #ddd, #c8c8ff);
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .key .label {
+      font-size: 11px;
+      color: #999;
+      pointer-events: none;
+    }
+
+    /* Black keys */
+    .key.black {
+      width: 30px;
+      height: 115px;
+      background: linear-gradient(to bottom, #333, #111);
+      border: 1px solid #000;
+      border-radius: 0 0 4px 4px;
+      margin-left: -15px;
+      margin-right: -15px;
+      z-index: 2;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+    }
+    .key.black:active, .key.black.active {
+      background: linear-gradient(to bottom, #555, #333);
+      box-shadow: 0 2px 3px rgba(0,0,0,0.4);
+    }
+    .key.black .label {
+      color: #666;
+      font-size: 9px;
+    }
+
+    /* Song list */
+    .songs-panel {
+      width: 90%;
+      max-width: 700px;
+      margin: 16px auto;
+    }
+    .songs-panel h2 {
+      font-size: 1rem;
+      color: #a78bfa;
+      margin-bottom: 8px;
+    }
+    .search-box {
+      width: 100%;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid #333;
+      background: #16213e;
+      color: #e0e0e0;
+      font-size: 0.85rem;
+      margin-bottom: 8px;
+      outline: none;
+    }
+    .search-box:focus { border-color: #7c3aed; }
+    .song-list {
+      max-height: 200px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+    }
+    .song-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: background 0.15s;
+    }
+    .song-item:hover { background: #16213e; }
+    .song-item .author { color: #888; font-size: 0.7rem; }
+
+    /* Now playing */
+    .now-playing {
+      margin: 10px auto;
+      text-align: center;
+      font-size: 0.85rem;
+      min-height: 60px;
+    }
+    .now-playing .title { color: #c4b5fd; font-weight: bold; }
+    .sheet {
+      margin-top: 4px;
+      font-family: monospace;
+      font-size: 0.95rem;
+      color: #7c3aed;
+      letter-spacing: 2px;
+      max-width: 700px;
+      line-height: 1.6;
+      word-break: break-all;
+    }
+    .sheet .played { color: #444; }
+    .sheet .current { color: #fbbf24; font-weight: bold; text-decoration: underline; }
+    .sheet .upcoming { color: #a78bfa; }
+
+    .controls {
+      margin: 6px 0;
+      display: flex;
+      gap: 8px;
+    }
+    .btn {
+      padding: 4px 14px;
+      border-radius: 4px;
+      border: 1px solid #7c3aed;
+      background: transparent;
+      color: #c4b5fd;
+      cursor: pointer;
+      font-size: 0.75rem;
+    }
+    .btn:hover { background: #7c3aed; color: #fff; }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      .key { width: 32px; height: 140px; }
+      .key.black { width: 22px; height: 90px; margin-left: -11px; margin-right: -11px; }
+      .key .label { font-size: 9px; }
+    }
+  </style>
+</head>
+<body>
+
+<h1>PIANO</h1>
+<p class="subtitle">click keys or use keyboard</p>
+
+<div class="piano-wrap" id="piano"></div>
+
+<div class="now-playing" id="nowPlaying"></div>
+
+<div class="songs-panel">
+  <h2>Song Sheets</h2>
+  <input type="text" class="search-box" id="searchBox" placeholder="Search songs...">
+  <div class="song-list" id="songList"></div>
+</div>
+
+<script>
+// ── Note mapping: 2 octaves + sharps ──
+const KEYS = [
+  // Octave 1
+  { note: 'C3',  white: true,  kb: 'a', file: 'Keya' },
+  { note: 'C#3', white: false, kb: 'w', file: 'Keyw' },
+  { note: 'D3',  white: true,  kb: 's', file: 'Keys' },
+  { note: 'D#3', white: false, kb: 'e', file: 'Keye' },
+  { note: 'E3',  white: true,  kb: 'd', file: 'Keyd' },
+  { note: 'F3',  white: true,  kb: 'f', file: 'Keyf' },
+  { note: 'F#3', white: false, kb: 't', file: 'Keyt' },
+  { note: 'G3',  white: true,  kb: 'g', file: 'Keyg' },
+  { note: 'G#3', white: false, kb: 'y', file: 'Keyy' },
+  { note: 'A3',  white: true,  kb: 'h', file: 'Keyh' },
+  { note: 'A#3', white: false, kb: 'u', file: 'Keyu' },
+  { note: 'B3',  white: true,  kb: 'j', file: 'Keyj' },
+  // Octave 2
+  { note: 'C4',  white: true,  kb: 'k', file: 'Keyk' },
+  { note: 'C#4', white: false, kb: 'o', file: 'Keyo' },
+  { note: 'D4',  white: true,  kb: 'l', file: 'Keyl' },
+  { note: 'D#4', white: false, kb: 'p', file: 'Keyp' },
+  { note: 'E4',  white: true,  kb: 'z', file: 'Keyz' },
+  { note: 'F4',  white: true,  kb: 'x', file: 'Keyx' },
+  { note: 'F#4', white: false, kb: 'v', file: null },
+  { note: 'G4',  white: true,  kb: 'c', file: 'Keyc' },
+  { note: 'G#4', white: false, kb: 'b', file: null },
+  { note: 'A4',  white: true,  kb: 'n', file: 'Keyn' },
+  { note: 'A#4', white: false, kb: 'm', file: 'Keym' },
+  { note: 'B4',  white: true,  kb: 'q', file: 'Keyq' },
+  // Extra keys from extension
+  { note: 'C5',  white: true,  kb: 'r', file: 'Keyr' },
+  { note: 'D5',  white: true,  kb: 'i', file: 'Keyi' },
+];
+
+// Build keyboard-to-key lookup
+const kbMap = {};
+KEYS.forEach(k => { kbMap[k.kb] = k; });
+
+// Also map uppercase letters to their upper-case audio files
+const upperFiles = ['B','C','D','E','G','H','I','J','L','O','P','Q','S','T','V','W','Y','Z'];
+const upperMap = {};
+upperFiles.forEach(l => { upperMap[l] = 'Key' + l + '-' + l; });
+
+// Audio cache
+const audioCache = {};
+function playSound(file) {
+  if (!file) return;
+  const path = 'audio/' + file + '.mp3';
+  // Create fresh audio each time for overlapping notes
+  const a = new Audio(path);
+  a.volume = 0.8;
+  a.play().catch(() => {});
+}
+
+// Build piano DOM
+const piano = document.getElementById('piano');
+KEYS.forEach(key => {
+  const el = document.createElement('div');
+  el.className = 'key' + (key.white ? '' : ' black');
+  el.dataset.kb = key.kb;
+  el.innerHTML = '<span class="label">' + key.kb.toUpperCase() + '</span>';
+
+  el.addEventListener('mousedown', () => triggerKey(key.kb));
+  el.addEventListener('touchstart', (e) => { e.preventDefault(); triggerKey(key.kb); });
+
+  piano.appendChild(el);
+});
+
+function triggerKey(kb) {
+  const key = kbMap[kb];
+  if (!key) return;
+
+  // Play sound
+  if (key.file) playSound(key.file);
+
+  // Visual feedback
+  const el = piano.querySelector(`[data-kb="${kb}"]`);
+  if (el) {
+    el.classList.add('active');
+    setTimeout(() => el.classList.remove('active'), 150);
+  }
+
+  // Advance song sheet
+  if (currentSong) advanceSong(kb);
+}
+
+// Keyboard input
+const pressed = {};
+document.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  const kb = e.key.toLowerCase();
+  if (kbMap[kb] && !pressed[kb]) {
+    pressed[kb] = true;
+    triggerKey(kb);
+  }
+  // Handle uppercase (shift+key) for song sheets
+  if (e.key !== e.key.toLowerCase() && upperMap[e.key]) {
+    playSound(upperMap[e.key]);
+  }
+});
+document.addEventListener('keyup', (e) => {
+  pressed[e.key.toLowerCase()] = false;
+});
+
+// ── Song Sheets ──
+let songs = [];
+let currentSong = null;
+let songPos = 0;
+
+fetch('json/musicSheet.json')
+  .then(r => r.json())
+  .then(data => {
+    songs = data.music || [];
+    renderSongs(songs);
+  })
+  .catch(() => {});
+
+function renderSongs(list) {
+  const el = document.getElementById('songList');
+  el.innerHTML = list.map(s =>
+    `<div class="song-item" data-id="${s.songId}">
+      <span>${s.title}</span>
+      <span class="author">${s.author}</span>
+    </div>`
+  ).join('');
+
+  el.querySelectorAll('.song-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const song = songs.find(s => s.songId == item.dataset.id);
+      if (song) startSong(song);
+    });
+  });
+}
+
+document.getElementById('searchBox').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  const filtered = songs.filter(s =>
+    s.title.toLowerCase().includes(q) || s.author.toLowerCase().includes(q)
+  );
+  renderSongs(filtered);
+});
+
+function startSong(song) {
+  currentSong = song;
+  songPos = 0;
+  renderSheet();
+}
+
+function renderSheet() {
+  if (!currentSong) { document.getElementById('nowPlaying').innerHTML = ''; return; }
+  const notes = currentSong.notes;
+
+  let html = `<div class="title">${currentSong.title} — ${currentSong.author}</div>`;
+  html += `<div class="controls">
+    <button class="btn" onclick="songPos=0;renderSheet()">Restart</button>
+    <button class="btn" onclick="currentSong=null;renderSheet()">Close</button>
+  </div>`;
+  html += '<div class="sheet">';
+
+  // Highlight current position
+  const played = notes.substring(0, songPos);
+  const current = notes[songPos] || '';
+  const upcoming = notes.substring(songPos + 1);
+
+  html += `<span class="played">${escHtml(played)}</span>`;
+  html += `<span class="current">${escHtml(current)}</span>`;
+  html += `<span class="upcoming">${escHtml(upcoming)}</span>`;
+  html += '</div>';
+
+  document.getElementById('nowPlaying').innerHTML = html;
+}
+
+function advanceSong(kb) {
+  if (!currentSong || songPos >= currentSong.notes.length) return;
+  const expected = currentSong.notes[songPos];
+  // Skip spaces, brackets, pipes, newlines
+  while (songPos < currentSong.notes.length && /[\s\[\]|,\n]/.test(currentSong.notes[songPos])) {
+    songPos++;
+  }
+  // Check if pressed key matches
+  if (songPos < currentSong.notes.length) {
+    const ch = currentSong.notes[songPos];
+    if (kb === ch || kb === ch.toLowerCase()) {
+      songPos++;
+      // Skip trailing whitespace/brackets
+      while (songPos < currentSong.notes.length && /[\s\[\]|,\n]/.test(currentSong.notes[songPos])) {
+        songPos++;
+      }
+    }
+  }
+  renderSheet();
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+</script>
+
+</body>
 </html>
