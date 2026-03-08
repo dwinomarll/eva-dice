@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Chrome Piano</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css" integrity="sha384-B0vP5xmATw1+K9KRQjQERJvTumQW0nPEzvF6L/Z6nronJ3oUOFUFpCjEUQouq2+l" crossorigin="anonymous">
+    <script>
+      // Shim chrome.storage.sync with localStorage
+      window.chrome = window.chrome || {};
+      chrome.storage = chrome.storage || {};
+      chrome.storage.sync = {
+        get: function(keys, callback) {
+          var result = {};
+          var keyList = Array.isArray(keys) ? keys : [keys];
+          keyList.forEach(function(k) {
+            var val = localStorage.getItem('piano_' + k);
+            if (val !== null) {
+              try { result[k] = JSON.parse(val); } catch(e) { result[k] = val; }
+            }
+          });
+          if (callback) callback(result);
+        },
+        set: function(items, callback) {
+          Object.keys(items).forEach(function(k) {
+            localStorage.setItem('piano_' + k, JSON.stringify(items[k]));
+          });
+          if (callback) callback();
+        }
+      };
+    </script>
+    <script>
+      // theme.js inline — patched for web
+      "undefined"!=typeof reactHotLoaderGlobal&&reactHotLoaderGlobal.default.signature;
+      chrome.storage.sync.get(["key"],function(e){
+        void 0!==e.key&&"DARK"===e.key&&(document.body.style.backgroundColor="#191819");
+      });
+    </script>
+  </head>
+  <body>
+    <div id="popup"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>
