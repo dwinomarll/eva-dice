@@ -203,6 +203,26 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   100%{transform:translateX(-16px) rotate(-13deg) scale(0.94);opacity:0.65;}
 }
 .oracle-btn.shuffling{opacity:0.55;pointer-events:none;letter-spacing:0.34em;}
+
+/* SHARE / SAVE ACTIONS */
+.share-bar{display:flex;gap:0.6rem;justify-content:center;margin:1.4rem 0 0.4rem;flex-wrap:wrap;}
+.share-btn{
+  background:linear-gradient(135deg,rgba(212,175,55,0.15),rgba(130,80,200,0.15));
+  border:1px solid rgba(212,175,55,0.5);color:var(--gold);
+  padding:0.55rem 1.4rem;border-radius:999px;cursor:pointer;
+  font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;font-family:inherit;
+  transition:all 0.2s;
+}
+.share-btn:hover{background:linear-gradient(135deg,rgba(212,175,55,0.28),rgba(130,80,200,0.28));box-shadow:0 0 16px rgba(212,175,55,0.18);}
+.share-btn:disabled{opacity:0.5;pointer-events:none;}
+.toast{
+  position:fixed;left:50%;bottom:2rem;transform:translateX(-50%) translateY(20px);
+  background:rgba(20,20,30,0.96);border:1px solid var(--gold);color:var(--gold);
+  padding:0.7rem 1.4rem;border-radius:999px;font-size:0.8rem;letter-spacing:0.05em;
+  opacity:0;transition:all 0.3s;z-index:100;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,0.55);
+  max-width:90vw;text-align:center;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 </style>
 </head>
 <body>
@@ -509,10 +529,11 @@ function runTarotDraw() {
   }, 820);
 }
 
-function renderCard(card, position, delay, rng) {
+function renderCard(card, position, delay, rng, collect) {
   const r = rng || Math.random;
   const reversed = r() < 0.32;
   const img = cardImage(card.name);
+  if (collect) collect.push({ name: prettyName(card.name), position, reversed, image: img, sage: card.sage || '' });
   const div = document.createElement('div');
   div.className = 'card-item';
   div.style.animationDelay = delay + 's';
@@ -535,9 +556,12 @@ function drawCelticCross(rng, q) {
   const drawn = deck.slice(0, 10);
   const container = document.getElementById('tarot-result');
   container.innerHTML = questionEcho(q);
+  const cards = [];
   drawn.forEach((card, i) => {
-    container.appendChild(renderCard(card, CC_POSITIONS[i], i * 0.08, rng));
+    container.appendChild(renderCard(card, CC_POSITIONS[i], i * 0.08, rng, cards));
   });
+  lastReading = { kind: 'tarot', spread: 'Celtic Cross', question: q, cards };
+  appendActions(container);
 }
 
 function drawPastPresentFuture(rng, q) {
@@ -545,16 +569,22 @@ function drawPastPresentFuture(rng, q) {
   const positions = ['Past', 'Present', 'Future'];
   const container = document.getElementById('tarot-result');
   container.innerHTML = questionEcho(q);
+  const cards = [];
   positions.forEach((pos, i) => {
-    container.appendChild(renderCard(deck[i], pos, i * 0.12, rng));
+    container.appendChild(renderCard(deck[i], pos, i * 0.12, rng, cards));
   });
+  lastReading = { kind: 'tarot', spread: 'Past · Present · Future', question: q, cards };
+  appendActions(container);
 }
 
 function drawSingle(rng, q) {
   const deck = shuffle(TAROT_CARDS, rng);
   const container = document.getElementById('tarot-result');
   container.innerHTML = questionEcho(q);
-  container.appendChild(renderCard(deck[0], 'Your Card', 0, rng));
+  const cards = [];
+  container.appendChild(renderCard(deck[0], 'Your Card', 0, rng, cards));
+  lastReading = { kind: 'tarot', spread: 'Single Draw', question: q, cards };
+  appendActions(container);
 }
 
 // ============================================================
@@ -597,6 +627,7 @@ function revealMystic(rng, q) {
   }
 
   const emoji = ANIMAL_EMOJI[animal.name.trim().toUpperCase()] || '✦';
+  const body = bodyLines.join(' ');
   const container = document.getElementById('mystic-result');
   container.innerHTML = `
     ${questionEcho(q)}
@@ -604,10 +635,180 @@ function revealMystic(rng, q) {
       <div class="mystic-emoji">${emoji}</div>
       <div class="mystic-name">${animal.name.trim()}</div>
       ${keyword ? `<div class="mystic-keyword">${keyword}</div>` : ''}
-      <div class="mystic-desc">${bodyLines.join(' ')}</div>
+      <div class="mystic-desc">${body}</div>
       ${shadow ? `<div class="shadow-label">✦ Shadow Reading</div><div class="mystic-desc">${shadow}</div>` : ''}
     </div>
   `;
+  lastReading = {
+    kind: 'mystic', spread: 'Wild Mystic', question: q,
+    animal: animal.name.trim(), emoji, keyword, body, shadow,
+    cards: [{ name: animal.name.trim(), position: 'Wild Mystic', reversed: false, image: null,
+              sage: body + (shadow ? '\n\nShadow Reading: ' + shadow : '') }]
+  };
+  appendActions(container);
+}
+
+// ============================================================
+// SHARE  ·  the last reading, as text + an image snippet
+// ============================================================
+let lastReading = null;
+
+function readingDateStr() {
+  return new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+}
+function truncate(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s; }
+
+function appendActions(container) {
+  const bar = document.createElement('div');
+  bar.className = 'share-bar';
+  bar.innerHTML = `
+    <button class="share-btn" onclick="shareReading(this)">📤 Share</button>
+    <button class="share-btn" onclick="copyReading()">🗒️ Copy text</button>`;
+  container.appendChild(bar);
+}
+
+function shareText(r) {
+  if (!r) return '';
+  let t = `🔮 EVA Oracle — ${r.spread}\n${readingDateStr()}\n`;
+  if (r.question) t += `\n🙋 Question: ${r.question}\n`;
+  if (r.kind === 'mystic') {
+    t += `\n${r.emoji} ${r.animal}${r.keyword ? ' — ' + r.keyword : ''}\n\n${r.body}\n`;
+    if (r.shadow) t += `\n✦ Shadow Reading: ${r.shadow}\n`;
+  } else {
+    r.cards.forEach(c => {
+      t += `\n• ${c.position}: ${c.name} (${c.reversed ? 'Reversed ↓' : 'Upright ↑'})`;
+      if (c.sage) t += `\n   ${c.sage}`;
+    });
+    t += '\n';
+  }
+  t += `\n— via EVA Oracle`;
+  return t;
+}
+
+function loadImg(src) {
+  return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+}
+
+// Render the reading to a shareable PNG (card art included)
+async function buildShareImage(r) {
+  const W = 1080, M = 64, innerW = W - M * 2;
+  const gold = '#d4af37', goldDim = 'rgba(212,175,55,0.6)', dim = 'rgba(232,224,208,0.6)';
+  const cv = document.createElement('canvas');
+  const ctx = cv.getContext('2d');
+  const wrap = (t, f, maxw) => {
+    ctx.font = f; const out = [];
+    String(t).split('\n').forEach(par => {
+      const words = par.split(/\s+/); let line = '';
+      for (const w of words) {
+        const test = line ? line + ' ' + w : w;
+        if (ctx.measureText(test).width > maxw && line) { out.push(line); line = w; } else line = test;
+      }
+      out.push(line);
+    });
+    return out;
+  };
+
+  // Preload card images (same-origin → canvas stays exportable)
+  const imgs = {};
+  if (r.kind !== 'mystic') {
+    await Promise.all(r.cards.filter(c => c.image).map(async c => { try { imgs[c.image] = await loadImg(c.image); } catch (e) {} }));
+  }
+
+  // ---- layout pass ----
+  const ops = []; let y = 64;
+  ops.push({ t: 'text', x: W / 2, y, s: 'E V A   O R A C L E', f: '600 30px sans-serif', c: gold, align: 'center' }); y += 44;
+  ops.push({ t: 'text', x: W / 2, y, s: r.spread.toUpperCase(), f: '500 22px sans-serif', c: goldDim, align: 'center' }); y += 32;
+  ops.push({ t: 'text', x: W / 2, y, s: readingDateStr(), f: '400 22px sans-serif', c: dim, align: 'center' }); y += 36;
+  ops.push({ t: 'line', y }); y += 38;
+  if (r.question) {
+    wrap('“' + r.question + '”', 'italic 30px serif', innerW).forEach(l => { ops.push({ t: 'text', x: W / 2, y, s: l, f: 'italic 30px serif', c: gold, align: 'center' }); y += 42; });
+    y += 16;
+  }
+  if (r.kind === 'mystic') {
+    ops.push({ t: 'text', x: W / 2, y: y + 96, s: r.emoji, f: '120px sans-serif', c: '#fff', align: 'center' }); y += 156;
+    ops.push({ t: 'text', x: W / 2, y, s: r.animal, f: '800 54px sans-serif', c: gold, align: 'center' }); y += 56;
+    if (r.keyword) { ops.push({ t: 'text', x: W / 2, y, s: r.keyword, f: '500 24px sans-serif', c: goldDim, align: 'center' }); y += 46; }
+    wrap(truncate(r.body, 760), '400 30px sans-serif', innerW).forEach(l => { ops.push({ t: 'text', x: M, y, s: l, f: '400 30px sans-serif', c: dim, align: 'left' }); y += 44; });
+  } else {
+    const single = r.cards.length === 1;
+    const tw = single ? 360 : 168, th = Math.round(tw * 1.71);
+    r.cards.forEach(c => {
+      const top = y, im = imgs[c.image];
+      if (im) ops.push({ t: 'img', img: im, x: M, y, w: tw, h: th, rev: c.reversed });
+      const tx = M + tw + 28, txw = innerW - tw - 28;
+      let ty = y + 22;
+      ops.push({ t: 'text', x: tx, y: ty, s: c.position, f: '500 20px sans-serif', c: goldDim, align: 'left' }); ty += 34;
+      wrap(c.name, '800 34px sans-serif', txw).forEach(l => { ops.push({ t: 'text', x: tx, y: ty, s: l, f: '800 34px sans-serif', c: gold, align: 'left' }); ty += 40; });
+      ops.push({ t: 'badge', x: tx, y: ty, reversed: c.reversed }); ty += 40;
+      wrap(truncate(c.sage, single ? 1000 : 260), '400 26px sans-serif', txw).forEach(l => { ops.push({ t: 'text', x: tx, y: ty, s: l, f: '400 26px sans-serif', c: dim, align: 'left' }); ty += 36; });
+      y = Math.max(top + (im ? th : 0), ty) + 30;
+      ops.push({ t: 'sep', y: y - 16 });
+    });
+  }
+  y += 26;
+  ops.push({ t: 'text', x: W / 2, y, s: '— via EVA Oracle', f: '400 22px sans-serif', c: dim, align: 'center' }); y += 36;
+
+  // ---- paint ----
+  cv.width = W; cv.height = Math.max(y, 560);
+  ctx.fillStyle = '#07070f'; ctx.fillRect(0, 0, W, cv.height);
+  const g = ctx.createLinearGradient(0, 0, 0, cv.height);
+  g.addColorStop(0, 'rgba(212,175,55,0.07)'); g.addColorStop(0.5, 'rgba(130,80,200,0.04)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, cv.height);
+  ctx.strokeStyle = 'rgba(212,175,55,0.3)'; ctx.lineWidth = 2; ctx.strokeRect(16, 16, W - 32, cv.height - 32);
+  ctx.textBaseline = 'alphabetic';
+  for (const op of ops) {
+    if (op.t === 'text') { ctx.font = op.f; ctx.fillStyle = op.c; ctx.textAlign = op.align || 'left'; ctx.fillText(op.s, op.x, op.y); }
+    else if (op.t === 'line' || op.t === 'sep') { ctx.strokeStyle = 'rgba(212,175,55,0.2)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(M, op.y); ctx.lineTo(W - M, op.y); ctx.stroke(); }
+    else if (op.t === 'img') {
+      ctx.save();
+      if (op.rev) { ctx.translate(op.x + op.w / 2, op.y + op.h / 2); ctx.rotate(Math.PI); ctx.drawImage(op.img, -op.w / 2, -op.h / 2, op.w, op.h); }
+      else ctx.drawImage(op.img, op.x, op.y, op.w, op.h);
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(212,175,55,0.45)'; ctx.lineWidth = 2; ctx.strokeRect(op.x, op.y, op.w, op.h);
+    } else if (op.t === 'badge') { ctx.font = '600 20px sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = op.reversed ? '#e07070' : '#7ec87e'; ctx.fillText(op.reversed ? '↓ Reversed' : '↑ Upright', op.x, op.y); }
+  }
+  return await new Promise(res => cv.toBlob(res, 'image/png'));
+}
+
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+  const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch (e) {} document.body.removeChild(ta);
+  return Promise.resolve();
+}
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob); const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+let toastTimer = null;
+function toast(msg) {
+  let el = document.getElementById('toast');
+  if (!el) { el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; document.body.appendChild(el); }
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function copyReading() {
+  if (!lastReading) return;
+  copyText(shareText(lastReading)).then(() => toast('Reading copied to clipboard ✓'));
+}
+
+async function shareReading(btn) {
+  if (!lastReading) return;
+  const text = shareText(lastReading);
+  if (btn) { btn.disabled = true; btn.textContent = '… preparing'; }
+  let file = null;
+  try { const blob = await buildShareImage(lastReading); if (blob) file = new File([blob], 'eva-oracle.png', { type: 'image/png' }); } catch (e) {}
+  if (btn) { btn.disabled = false; btn.textContent = '📤 Share'; }
+  try {
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], text }); return; }
+    if (navigator.share) { await navigator.share({ title: 'EVA Oracle', text }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  // Fallback (desktop / unsupported): download the image + copy the text
+  if (file) downloadBlob(file, 'eva-oracle.png');
+  copyText(text);
+  toast(file ? 'Image saved & text copied ✓' : 'Reading copied ✓');
 }
 
 // ============================================================
