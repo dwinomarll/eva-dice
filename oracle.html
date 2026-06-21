@@ -658,13 +658,71 @@ function readingDateStr() {
 }
 function truncate(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s; }
 
+// ── Notion integration ──────────────────────────────────────────────
+// Daily database opened by the "Copy for Notion" button.
+const HABITAT_URL = 'https://app.notion.com/p/19c6ae29a07c8188a5b4ec2df445bb6b';
+// Serverless Worker that auto-fills today's HABITAT row. Leave '' until deployed
+// (see NOTION_SETUP.md). When empty, the Save button stays hidden.
+const NOTION_WORKER_URL = '';
+
 function appendActions(container) {
   const bar = document.createElement('div');
   bar.className = 'share-bar';
   bar.innerHTML = `
     <button class="share-btn" onclick="shareReading(this)">📤 Share</button>
-    <button class="share-btn" onclick="copyReading()">🗒️ Copy text</button>`;
+    <button class="share-btn" onclick="copyReading()">🗒️ Copy text</button>
+    <button class="share-btn" onclick="copyNotion()">📓 Copy for Notion</button>
+    ${NOTION_WORKER_URL ? '<button class="share-btn" onclick="saveToNotion(this)">🌙 Save to HABITAT</button>' : ''}`;
   container.appendChild(bar);
+}
+
+// Build a reading as Notion-friendly markdown (pastes cleanly into a page body).
+function notionMarkdown(r) {
+  if (!r) return '';
+  let t = `# 🔮 ${r.spread} — ${readingDateStr()}\n`;
+  if (r.question) t += `\n**🙋 Question:** ${r.question}\n`;
+  if (r.kind === 'mystic') {
+    t += `\n**${r.emoji || ''} ${r.animal || ''}**${r.keyword ? ' — ' + r.keyword : ''}\n`;
+    if (r.body) t += `\n${r.body}\n`;
+    if (r.shadow) t += `\n> ✦ Shadow: ${r.shadow}\n`;
+  } else {
+    t += '\n';
+    (r.cards || []).forEach(c => {
+      t += `- **${c.position}:** ${c.name} (${c.reversed ? 'Reversed ↓' : 'Upright ↑'})\n`;
+      if (c.sage) t += `    - ${c.sage}\n`;
+    });
+  }
+  t += `\n— via EVA Oracle`;
+  return t;
+}
+
+function copyNotion() {
+  if (!lastReading) return;
+  copyText(notionMarkdown(lastReading)).then(() => {
+    toast('Copied — paste into your Notion page ✓');
+    window.open(HABITAT_URL, '_blank', 'noopener');
+  });
+}
+
+async function saveToNotion(btn) {
+  if (!lastReading || !NOTION_WORKER_URL) return;
+  if (btn) { btn.disabled = true; btn.textContent = '… saving'; }
+  try {
+    const res = await fetch(NOTION_WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(lastReading),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'save failed');
+    const m = (data.matched || []).length, total = m + (data.unmatched || []).length;
+    toast(total ? `Saved ✓ ${m}/${total} cards linked` : 'Saved to HABITAT ✓');
+  } catch (e) {
+    toast('Save failed — copied instead');
+    copyText(notionMarkdown(lastReading));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🌙 Save to HABITAT'; }
+  }
 }
 
 function shareText(r) {
