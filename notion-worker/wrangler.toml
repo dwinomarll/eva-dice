@@ -1,6 +1,0 @@
-name = "eva-oracle-notion"
-main = "worker.js"
-compatibility_date = "2025-01-01"
-
-# NOTION_TOKEN is a secret — do NOT put it here. Set it with:
-#   wrangler secret put NOTION_TOKEN

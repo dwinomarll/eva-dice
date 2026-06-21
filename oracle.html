@@ -215,6 +215,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 }
 .share-btn:hover{background:linear-gradient(135deg,rgba(212,175,55,0.28),rgba(130,80,200,0.28));box-shadow:0 0 16px rgba(212,175,55,0.18);}
 .share-btn:disabled{opacity:0.5;pointer-events:none;}
+.hist-item{border:1px solid rgba(212,175,55,0.18);border-radius:10px;padding:0.7rem 0.85rem;margin:0.6rem 0;background:rgba(212,175,55,0.04);text-align:left;}
+.hist-head{display:flex;justify-content:space-between;align-items:center;gap:0.5rem;font-size:0.62rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);}
+.hist-type{color:var(--gold-dim);}
+.hist-title{margin:0.35rem 0 0.55rem;color:var(--text);font-size:0.95rem;white-space:pre-wrap;}
+.hist-actions{display:flex;gap:0.5rem;}
+.hist-actions .share-btn{padding:0.3rem 0.7rem;font-size:0.7rem;}
 .toast{
   position:fixed;left:50%;bottom:2rem;transform:translateX(-50%) translateY(20px);
   background:rgba(20,20,30,0.96);border:1px solid var(--gold);color:var(--gold);
@@ -237,6 +243,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   <button class="tab-btn" onclick="switchTab('mystic')">🦅 Wild Mystic</button>
   <button class="tab-btn" onclick="switchTab('iching')">☯ I Ching</button>
   <button class="tab-btn" onclick="switchTab('dice')">🎲 Dice</button>
+  <button class="tab-btn" onclick="switchTab('history')">📜 History</button>
 </div>
 
 <!-- TAROT PANEL -->
@@ -295,6 +302,17 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     </div>
     <div class="mode-row" id="count-row"></div>
   </div>
+</div>
+
+<!-- HISTORY PANEL -->
+<div id="panel-history" class="panel">
+  <div class="oracle-title">History</div>
+  <div class="oracle-sub">Your rolls, draws &amp; predictions · <span id="history-count">0</span> saved · private to this device</div>
+  <div class="share-bar" style="margin-top:0.9rem">
+    <button class="share-btn" onclick="exportHistory()">⬇️ Export</button>
+    <button class="share-btn" onclick="clearHistory()">🗑️ Clear all</button>
+  </div>
+  <div id="history-list" class="result-area"></div>
 </div>
 
 <script>
@@ -381,6 +399,7 @@ function switchTab(tab) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-' + tab).classList.add('active');
   event.currentTarget.classList.add('active');
+  if (tab === 'history') renderHistory();
 }
 
 // ============================================================
@@ -661,18 +680,15 @@ function truncate(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, 
 // ── Notion integration ──────────────────────────────────────────────
 // Daily database opened by the "Copy for Notion" button.
 const HABITAT_URL = 'https://app.notion.com/p/19c6ae29a07c8188a5b4ec2df445bb6b';
-// Serverless Worker that auto-fills today's HABITAT row. Leave '' until deployed
-// (see NOTION_SETUP.md). When empty, the Save button stays hidden.
-const NOTION_WORKER_URL = '';
 
 function appendActions(container) {
+  if (lastReading) logReading(lastReading);
   const bar = document.createElement('div');
   bar.className = 'share-bar';
   bar.innerHTML = `
     <button class="share-btn" onclick="shareReading(this)">📤 Share</button>
     <button class="share-btn" onclick="copyReading()">🗒️ Copy text</button>
-    <button class="share-btn" onclick="copyNotion()">📓 Copy for Notion</button>
-    ${NOTION_WORKER_URL ? '<button class="share-btn" onclick="saveToNotion(this)">🌙 Save to HABITAT</button>' : ''}`;
+    <button class="share-btn" onclick="copyNotion()">📓 Copy for Notion</button>`;
   container.appendChild(bar);
 }
 
@@ -704,25 +720,46 @@ function copyNotion() {
   });
 }
 
-async function saveToNotion(btn) {
-  if (!lastReading || !NOTION_WORKER_URL) return;
-  if (btn) { btn.disabled = true; btn.textContent = '… saving'; }
-  try {
-    const res = await fetch(NOTION_WORKER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(lastReading),
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'save failed');
-    const m = (data.matched || []).length, total = m + (data.unmatched || []).length;
-    toast(total ? `Saved ✓ ${m}/${total} cards linked` : 'Saved to HABITAT ✓');
-  } catch (e) {
-    toast('Save failed — copied instead');
-    copyText(notionMarkdown(lastReading));
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🌙 Save to HABITAT'; }
-  }
+// ── In-app History log (localStorage; private to this device) ─────────
+const HISTORY_KEY = 'evaOracleHistory';
+function loadHistory() { try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch (e) { return []; } }
+function saveHistory(arr) { try { localStorage.setItem(HISTORY_KEY, JSON.stringify(arr.slice(0, 500))); } catch (e) {} }
+function logHistory(type, title, text) {
+  const arr = loadHistory();
+  arr.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), type, title, text });
+  saveHistory(arr);
+  const badge = document.getElementById('history-count'); if (badge) badge.textContent = loadHistory().length;
+}
+// Tarot + Wild Mystic are logged here (called from appendActions via lastReading).
+function logReading(r) {
+  const title = r.kind === 'mystic' ? `${r.emoji || ''} ${r.animal || ''}`.trim() : r.spread;
+  logHistory(r.kind === 'mystic' ? 'Wild Mystic' : 'Tarot', title, notionMarkdown(r));
+}
+function histEscape(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  const arr = loadHistory();
+  const badge = document.getElementById('history-count'); if (badge) badge.textContent = arr.length;
+  if (!arr.length) { list.innerHTML = `<div class="oracle-sub" style="margin-top:1.5rem">No entries yet — your draws and rolls will appear here.</div>`; return; }
+  list.innerHTML = arr.map(e => {
+    const when = new Date(e.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    return `<div class="hist-item">
+      <div class="hist-head"><span class="hist-type">${histEscape(e.type)}</span><span class="hist-when">${when}</span></div>
+      <div class="hist-title">${histEscape(e.title)}</div>
+      <div class="hist-actions">
+        <button class="share-btn" onclick="copyHistory('${e.id}')">📋 Copy</button>
+        <button class="share-btn" onclick="deleteHistory('${e.id}')">✕ Remove</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function copyHistory(id) { const e = loadHistory().find(x => x.id === id); if (e) copyText(e.text).then(() => toast('Copied ✓')); }
+function deleteHistory(id) { saveHistory(loadHistory().filter(x => x.id !== id)); renderHistory(); }
+function clearHistory() { if (confirm('Clear all history on this device? This cannot be undone.')) { saveHistory([]); renderHistory(); } }
+function exportHistory() {
+  const blob = new Blob([JSON.stringify(loadHistory(), null, 2)], { type: 'application/json' });
+  downloadBlob(blob, 'eva-oracle-history.json');
+  toast('History exported ✓');
 }
 
 function shareText(r) {
@@ -987,6 +1024,14 @@ function castIChing() {
     <div class="hex-desc">${primaryHex.desc}</div>
     ${futureHTML}
   `;
+
+  const ichingText = `# ☯ I Ching — ${readingDateStr()}\n\n**Hexagram ${primaryHex.n}: ${primaryHex.name}** (${primaryHex.key})\n${primaryHex.desc}\n` +
+    (changingLines.length
+      ? `\n**Changing lines:** ${changingLines.map(i => i + 1).join(', ')}\n` +
+        (futureHex ? `\n**Transforms into → Hexagram ${futureHex.n}: ${futureHex.name}** (${futureHex.key})\n${futureHex.desc}\n` : '')
+      : `\nNo changing lines · a stable moment\n`) +
+    `\n— via EVA Oracle`;
+  logHistory('I Ching', `Hexagram ${primaryHex.n} · ${primaryHex.name}`, ichingText);
 }
 
 // ============================================================
@@ -1061,6 +1106,11 @@ function rollDice() {
       </div>
     `).join('');
   }
+
+  const diceTitle = diceCount === 1 ? `D${currentMode} → ${rolls[0]}` : `${diceCount}D${currentMode} → ${total}`;
+  const diceText = `# 🎲 Dice — ${readingDateStr()}\n\n**${diceTitle}**` +
+    (diceCount > 1 ? `\nRolls: ${rolls.join(', ')}` : '') + `\n\n— via EVA Oracle`;
+  logHistory('Dice', diceTitle, diceText);
 }
 
 initDice();
