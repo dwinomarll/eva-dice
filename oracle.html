@@ -1052,14 +1052,16 @@ let diceCount = 1;
 
 // ── Real polyhedral dice (SVG) — each type has its own shape, color, animation ──
 // color = body fill, edge = bright rim, facet = inner seam lines, text/ts = number + outline.
+// Rainbow color-coded convention (the standard "learning set" mapping):
+// d4 red · d6 orange · d8 yellow · d10 green · d12 blue · d20 purple · d100 teal.
 const DICE_STYLE = {
-  4:   { color: '#c4384e', edge: '#ffd9df', facet: 'rgba(0,0,0,0.22)', text: '#fff',     ts: 'rgba(0,0,0,0.40)', glow: 'rgba(196,56,78,0.55)' },
-  6:   { color: '#efe7d4', edge: '#fffdf6', facet: 'rgba(0,0,0,0.16)', text: '#2a2012', ts: 'rgba(255,255,255,0.5)', glow: 'rgba(232,224,208,0.5)' },
-  8:   { color: '#2f7fc0', edge: '#bfe2ff', facet: 'rgba(0,0,0,0.22)', text: '#fff',     ts: 'rgba(0,0,0,0.40)', glow: 'rgba(47,127,192,0.55)' },
-  10:  { color: '#2fae6a', edge: '#c2f5d6', facet: 'rgba(0,0,0,0.22)', text: '#fff',     ts: 'rgba(0,0,0,0.40)', glow: 'rgba(47,174,106,0.55)' },
-  12:  { color: '#8a4fc8', edge: '#e3ccff', facet: 'rgba(0,0,0,0.22)', text: '#fff',     ts: 'rgba(0,0,0,0.40)', glow: 'rgba(138,79,200,0.55)' },
-  20:  { color: '#caa12f', edge: '#ffe6a6', facet: 'rgba(0,0,0,0.22)', text: '#3a2c08', ts: 'rgba(255,255,255,0.35)', glow: 'rgba(212,175,55,0.65)' },
-  100: { color: '#3bb0a6', edge: '#bff3ee', facet: 'rgba(0,0,0,0.22)', text: '#fff',     ts: 'rgba(0,0,0,0.40)', glow: 'rgba(59,176,166,0.55)' },
+  4:   { color: '#d23b3b', edge: '#ffcdcd', facet: 'rgba(0,0,0,0.22)', text: '#fff',     ts: 'rgba(0,0,0,0.40)', glow: 'rgba(210,59,59,0.55)' },
+  6:   { color: '#e8842b', edge: '#ffd9a8', facet: 'rgba(0,0,0,0.20)', text: '#fff',     ts: 'rgba(0,0,0,0.42)', glow: 'rgba(232,132,43,0.55)' },
+  8:   { color: '#f2c327', edge: '#fff0b8', facet: 'rgba(0,0,0,0.18)', text: '#3a2c08', ts: 'rgba(255,255,255,0.5)', glow: 'rgba(242,195,39,0.55)' },
+  10:  { color: '#35ad5f', edge: '#c2f5d1', facet: 'rgba(0,0,0,0.22)', text: '#fff',     ts: 'rgba(0,0,0,0.40)', glow: 'rgba(53,173,95,0.55)' },
+  12:  { color: '#3b7fd4', edge: '#c6e0ff', facet: 'rgba(0,0,0,0.22)', text: '#fff',     ts: 'rgba(0,0,0,0.40)', glow: 'rgba(59,127,212,0.55)' },
+  20:  { color: '#8b46c9', edge: '#e3ccff', facet: 'rgba(0,0,0,0.22)', text: '#fff',     ts: 'rgba(0,0,0,0.40)', glow: 'rgba(139,70,201,0.6)' },
+  100: { color: '#2fb0a6', edge: '#bff3ee', facet: 'rgba(0,0,0,0.22)', text: '#fff',     ts: 'rgba(0,0,0,0.40)', glow: 'rgba(47,176,166,0.55)' },
 };
 // points = outline; facets = inner seam lines [x1,y1,x2,y2]; num = number centre.
 const DICE_SHAPES = {
