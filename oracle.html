@@ -460,11 +460,79 @@ function mulberry32(a) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-function makeRng(question) {
-  const q = (question || '').trim().toLowerCase();
-  const seed = (hashStr(q) ^ cryptoSeed() ^ (Date.now() >>> 0)) >>> 0;
-  return mulberry32(seed || 1);
+// ── Cast receipts: seeded, replayable, one cast per question ──────────
+// Every cast draws one 32-bit seed from the system entropy pool and records
+// it with the moment of asking (America/New_York) and the question. The PRNG
+// is mulberry32(seed ^ hash(ts_et|kind|question)), so the same receipt always
+// rebuilds the same draw (replayCast). Receipts stay in localStorage on this
+// device. A question already cast is shown again, not re-rolled, unless you
+// say circumstances changed (the serious-reader rule: read the chart that came up).
+const CAST_KEY = 'evaOracleCasts';
+const CAST_ENGINE = 'mulberry32/fnv1a/v1';
+function loadCasts() { try { return JSON.parse(localStorage.getItem(CAST_KEY)) || []; } catch (e) { return []; } }
+function saveCasts(arr) { try { localStorage.setItem(CAST_KEY, JSON.stringify(arr.slice(0, 1000))); } catch (e) {} }
+function normQuestion(q) { return (q || '').trim().toLowerCase().replace(/\s+/g, ' ').replace(/[^a-z0-9 ]/g, ''); }
+function etStamp(d) {
+  const f = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit',
+    day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZoneName: 'shortOffset' });
+  const p = Object.fromEntries(f.formatToParts(d).map(x => [x.type, x.value]));
+  const m = /GMT([+-])(\d+)(?::(\d+))?/.exec(p.timeZoneName || '') || [null, '-', '5', '00'];
+  const off = `${m[1]}${String(m[2]).padStart(2, '0')}:${String(m[3] || '00').padStart(2, '0')}`;
+  return `${p.year}-${p.month}-${p.day}T${p.hour === '24' ? '00' : p.hour}:${p.minute}:${p.second}${off}`;
 }
+function castSeedMix(seed, tsEt, kind, q) { return ((seed >>> 0) ^ hashStr(`${tsEt}|${kind}|${normQuestion(q)}`)) >>> 0; }
+// A recording PRNG: counts how many numbers the cast used, for the receipt.
+function recordingRng(seedMix, receipt) {
+  const base = mulberry32(seedMix || 1);
+  return function () { const v = base(); receipt.n = (receipt.n || 0) + 1; receipt.h = hashStr(`${receipt.h || 0}|${v}`); return v; };
+}
+function findCast(kind, q) {
+  const k = normQuestion(q);
+  if (!k) return null;           // a blank question is a casual pull, never gated
+  return loadCasts().find(c => c.kind === kind && c.qkey === k) || null;
+}
+// Start a cast. Returns { rng, receipt, replayed }.
+function beginCast(kind, question) {
+  const prior = findCast(kind, question);
+  if (prior && !confirm(`You already cast this question at ${prior.ts_et} (ET).\n\nOK = circumstances have changed, cast again.\nCancel = read the cast that came up.`)) {
+    return { rng: replayRng(prior), receipt: prior, replayed: true };
+  }
+  const receipt = { id: '', engine: CAST_ENGINE, kind, question: (question || '').trim(), qkey: normQuestion(question),
+                    seed: cryptoSeed(), ts_et: etStamp(new Date()), n: 0, h: 0, recast_of: prior ? prior.id : null };
+  receipt.id = (hashStr(`${receipt.seed}|${receipt.ts_et}|${kind}|${receipt.qkey}`) >>> 0).toString(16).padStart(8, '0');
+  const rng = recordingRng(castSeedMix(receipt.seed, receipt.ts_et, kind, question), receipt);
+  return { rng, receipt, replayed: false };
+}
+// Call once the draw is done, so the receipt records how many numbers it used.
+function finishCast(cast, summary) {
+  if (cast.replayed) return cast.receipt;
+  cast.receipt.summary = summary || '';
+  const arr = loadCasts(); arr.unshift(cast.receipt); saveCasts(arr);
+  return cast.receipt;
+}
+// The PRNG a receipt was cast with, from the start.
+function replayRng(receipt) { return mulberry32(castSeedMix(receipt.seed, receipt.ts_et, receipt.kind, receipt.question) || 1); }
+// Check a receipt: regenerate its numbers and compare the running hash.
+function replayCast(idOrReceipt) {
+  const r = typeof idOrReceipt === 'string' ? loadCasts().find(c => c.id === idOrReceipt) : idOrReceipt;
+  if (!r) return { ok: false, reason: 'receipt not found' };
+  if (r.engine !== CAST_ENGINE) return { ok: false, reason: 'unknown engine ' + r.engine };
+  const rng = replayRng(r); let h = 0;
+  for (let i = 0; i < (r.n || 0); i++) h = hashStr(`${h}|${rng()}`);
+  return { ok: h === r.h, receipt: r };
+}
+function stampReceipt(container, cast) {
+  if (!container) return;
+  const d = document.createElement('div');
+  d.className = 'changing-note cast-receipt';
+  d.textContent = receiptLine(cast.receipt, cast.replayed);
+  container.appendChild(d);
+}
+function receiptLine(receipt, replayed) {
+  return `Receipt ${receipt.id} · seed ${receipt.seed} · ${receipt.ts_et} ET${replayed ? ' · shown again, not re-rolled' : ''}`;
+}
+// Kept for callers that only need a seeded generator.
+function makeRng(question, kind) { return beginCast(kind || 'draw', question).rng; }
 
 function getQuestion(which) {
   const el = document.getElementById(which + '-question');
@@ -514,7 +582,8 @@ const ANIMAL_EMOJI = {
 };
 
 function shuffle(arr, rng) {
-  const r = rng || Math.random;
+  if (!rng) throw new Error('shuffle needs a seeded rng (beginCast)');
+  const r = rng;
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(r() * (i + 1));
@@ -543,7 +612,8 @@ function setSpread(spread) {
 
 function runTarotDraw() {
   const q = getQuestion('tarot');
-  const rng = makeRng(q);            // seeded by your true question + entropy
+  const cast = beginCast('tarot:' + currentSpread, q);   // seeded, with a receipt
+  const rng = cast.rng;
   const btn = document.getElementById('tarot-draw-btn');
   const container = document.getElementById('tarot-result');
   // Shuffle motion — let the deck move before it settles
@@ -553,12 +623,16 @@ function runTarotDraw() {
     if (currentSpread === 'celtic') drawCelticCross(rng, q);
     else if (currentSpread === 'ppf') drawPastPresentFuture(rng, q);
     else drawSingle(rng, q);
+    finishCast(cast, lastReading ? (lastReading.cards || []).map(c => c.name + (c.reversed ? ' (R)' : '')).join(', ') : '');
+    if (lastReading) lastReading.receipt = receiptLine(cast.receipt, cast.replayed);
+    stampReceipt(container, cast);
     btn.classList.remove('shuffling');
   }, 820);
 }
 
 function renderCard(card, position, delay, rng, collect) {
-  const r = rng || Math.random;
+  if (!rng) throw new Error('renderCard needs a seeded rng (beginCast)');
+  const r = rng;
   const reversed = r() < 0.32;
   const img = cardImage(card.name);
   if (collect) collect.push({ name: prettyName(card.name), position, reversed, image: img, sage: card.sage || '' });
@@ -620,13 +694,17 @@ function drawSingle(rng, q) {
 // ============================================================
 function drawMystic() {
   const q = getQuestion('mystic');
-  const rng = makeRng(q);
+  const cast = beginCast('mystic', q);
+  const rng = cast.rng;
   const btn = document.getElementById('mystic-draw-btn');
   const container = document.getElementById('mystic-result');
   if (btn) btn.classList.add('shuffling');
   container.innerHTML = '<div class="shuffle-stage">🦅</div>';
   setTimeout(() => {
     revealMystic(rng, q);
+    finishCast(cast, lastReading && lastReading.animal ? lastReading.animal : '');
+    if (lastReading) lastReading.receipt = receiptLine(cast.receipt, cast.replayed);
+    stampReceipt(container, cast);
     if (btn) btn.classList.remove('shuffling');
   }, 760);
 }
@@ -717,6 +795,7 @@ function notionMarkdown(r) {
       if (c.sage) t += `    - ${c.sage}\n`;
     });
   }
+  if (r.receipt) t += `\n${r.receipt}\n`;
   t += `\n— via EVA Oracle`;
   return t;
 }
@@ -735,7 +814,7 @@ function loadHistory() { try { return JSON.parse(localStorage.getItem(HISTORY_KE
 function saveHistory(arr) { try { localStorage.setItem(HISTORY_KEY, JSON.stringify(arr.slice(0, 500))); } catch (e) {} }
 function logHistory(type, title, text) {
   const arr = loadHistory();
-  arr.unshift({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), type, title, text });
+  arr.unshift({ id: Date.now().toString(36) + cryptoSeed().toString(36).slice(0, 4), ts: new Date().toISOString(), type, title, text });
   saveHistory(arr);
   const badge = document.getElementById('history-count'); if (badge) badge.textContent = loadHistory().length;
 }
@@ -919,11 +998,12 @@ async function shareReading(btn) {
 // I CHING - THREE COIN METHOD
 // ============================================================
 function castIChing() {
-  // Each line: throw 3 coins (heads=3, tails=2)
+  // Each line: throw 3 coins (heads=3, tails=2), from a seeded cast with a receipt.
   // 6=old yin(changing), 7=young yang, 8=young yin, 9=old yang(changing)
+  const cast = beginCast('iching', '');
   const lines = [];
   for (let i = 0; i < 6; i++) {
-    const coins = [1,2,3].map(() => Math.random() < 0.5 ? 3 : 2);
+    const coins = [1,2,3].map(() => cast.rng() < 0.5 ? 3 : 2);
     const val = coins.reduce((a, b) => a + b, 0);
     lines.push(val); // 6,7,8,9
   }
@@ -1039,7 +1119,9 @@ function castIChing() {
       ? `\n**Changing lines:** ${changingLines.map(i => i + 1).join(', ')}\n` +
         (futureHex ? `\n**Transforms into → Hexagram ${futureHex.n}: ${futureHex.name}** (${futureHex.key})\n${futureHex.desc}\n` : '')
       : `\nNo changing lines · a stable moment\n`) +
-    `\n— via EVA Oracle`;
+    `\n${receiptLine(cast.receipt, cast.replayed)}\n\n— via EVA Oracle`;
+  finishCast(cast, `${lines.join('')} ${primaryHex.n}`);
+  stampReceipt(container, cast);
   logHistory('I Ching', `Hexagram ${primaryHex.n} · ${primaryHex.name}`, ichingText);
 }
 
@@ -1148,10 +1230,12 @@ function rollDice() {
   const labelEl = document.getElementById('dice-label');
   const multiEl = document.getElementById('multi-results');
   
+  const cast = beginCast(`dice:${diceCount}d${currentMode}`, '');
   const rolls = [];
   for (let i = 0; i < diceCount; i++) {
-    rolls.push(Math.floor(Math.random() * currentMode) + 1);
+    rolls.push(Math.floor(cast.rng() * currentMode) + 1);
   }
+  finishCast(cast, rolls.join(','));
   const total = rolls.reduce((a, b) => a + b, 0);
 
   // Retrigger the per-die-type roll animation.
@@ -1178,7 +1262,7 @@ function rollDice() {
 
   const diceTitle = diceCount === 1 ? `D${currentMode} → ${rolls[0]}` : `${diceCount}D${currentMode} → ${total}`;
   const diceText = `# 🎲 Dice — ${readingDateStr()}\n\n**${diceTitle}**` +
-    (diceCount > 1 ? `\nRolls: ${rolls.join(', ')}` : '') + `\n\n— via EVA Oracle`;
+    (diceCount > 1 ? `\nRolls: ${rolls.join(', ')}` : '') + `\n\n${receiptLine(cast.receipt, cast.replayed)}\n\n— via EVA Oracle`;
   logHistory('Dice', diceTitle, diceText);
 }
 
