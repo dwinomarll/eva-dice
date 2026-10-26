@@ -313,6 +313,43 @@
 
     buildDice();
 
+    /* ───────── Seeded roll with a receipt ─────────
+       The d20 numbers (not the cosmetic spin) come from mulberry32 seeded by
+       one recorded system-entropy seed mixed with the moment of rolling in
+       America/New_York. Receipts stay in localStorage; replayDiceCast(id)
+       rebuilds the numbers. Same engine as oracle.html. */
+    const DICE_CAST_KEY = 'evaDiceCasts';
+    const CAST_ENGINE = 'mulberry32/fnv1a/v1';
+    function hashStr(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; }
+    function mulberry32(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+    function cryptoSeed() { const b = new Uint32Array(1); (self.crypto || window.crypto).getRandomValues(b); return b[0] >>> 0; }
+    function etStamp(d) {
+      const f = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZoneName: 'shortOffset' });
+      const p = Object.fromEntries(f.formatToParts(d).map(x => [x.type, x.value]));
+      const m = /GMT([+-])(\d+)(?::(\d+))?/.exec(p.timeZoneName || '') || [null, '-', '5', '00'];
+      return `${p.year}-${p.month}-${p.day}T${p.hour === '24' ? '00' : p.hour}:${p.minute}:${p.second}${m[1]}${String(m[2]).padStart(2, '0')}:${String(m[3] || '00').padStart(2, '0')}`;
+    }
+    function diceRng(r) { return mulberry32(((r.seed >>> 0) ^ hashStr(`${r.ts_et}|${r.kind}|`)) >>> 0 || 1); }
+    function loadDiceCasts() { try { return JSON.parse(localStorage.getItem(DICE_CAST_KEY)) || []; } catch (e) { return []; } }
+    function rollD20s(n) {
+      const r = { engine: CAST_ENGINE, kind: `d20x${n}`, seed: cryptoSeed(), ts_et: etStamp(new Date()) };
+      r.id = hashStr(`${r.seed}|${r.ts_et}|${r.kind}`).toString(16).padStart(8, '0');
+      const rng = diceRng(r);
+      r.rolls = Array.from({ length: n }, () => Math.floor(rng() * 20) + 1);
+      try { const a = loadDiceCasts(); a.unshift(r); localStorage.setItem(DICE_CAST_KEY, JSON.stringify(a.slice(0, 500))); } catch (e) {}
+      return r;
+    }
+    function replayDiceCast(id) {
+      const r = loadDiceCasts().find(c => c.id === id);
+      if (!r) return { ok: false, reason: 'receipt not found' };
+      const rng = diceRng(r);
+      const rolls = r.rolls.map(() => Math.floor(rng() * 20) + 1);
+      return { ok: rolls.join() === r.rolls.join(), rolls, receipt: r };
+    }
+    let lastDiceCast = null;
+    window.replayDiceCast = replayDiceCast;
+
     /* ───────── Roll ───────── */
     function rollDice() {
       if (rolling) return;
@@ -321,8 +358,9 @@
       document.getElementById('result-area').innerHTML = '';
 
       const now = performance.now();
-      diceArr.forEach(d => {
-        d.result    = Math.floor(Math.random() * 20) + 1;
+      lastDiceCast = rollD20s(diceArr.length);
+      diceArr.forEach((d, i) => {
+        d.result    = lastDiceCast.rolls[i];
         d.spinning  = true;
         d.startTime = now;
         d.duration  = 1700 + Math.random() * 600;
@@ -350,6 +388,11 @@
           `<span class="roll-sep">+</span>` +
           `<span class="roll-num">${nums[1]}</span>` +
           `<span class="roll-total" style="align-self:flex-end;margin-bottom:0.6rem">= ${total}</span>`;
+      }
+      if (lastDiceCast) {
+        area.insertAdjacentHTML('beforeend',
+          `<div class="roll-receipt" style="flex-basis:100%;font-size:0.7rem;opacity:0.6;margin-top:0.4rem">` +
+          `Receipt ${lastDiceCast.id} · seed ${lastDiceCast.seed} · ${lastDiceCast.ts_et} ET</div>`);
       }
     }
 
